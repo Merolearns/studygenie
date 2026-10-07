@@ -9,11 +9,12 @@ Original code, built in public, one honest step at a time.
 - Base templates + CSS, README skeleton, .gitignore
 - DB unit tests passing
 
-## Day 2 (Oct 7) — Scheduling engine
+## Day 2 (Oct 7) — Scheduling engine ✅
 - `scheduler.py`: urgency score (days until exam), difficulty weight,
   spaced-repetition intervals (1/3/7 days)
 - `generate_plan(course_id, minutes_per_day)` -> list of sessions
 - Unit tests for the engine (overdue topic prioritized, etc.)
+- "Generate study plan" button on the course page saves sessions to the DB
 
 ## Day 3 (Oct 8) — Timetable UI
 - Week view + "today" view of planned sessions
