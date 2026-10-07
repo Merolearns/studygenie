@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>My courses</h1>
+<a class="btn" href="{{ url_for('new_course') }}">+ Add course</a>
+{% if courses %}
+<ul class="cards">
+  {% for c in courses %}
+  <li class="card">
+    <a href="{{ url_for('course_detail', course_id=c.id) }}"><strong>{{ c.name }}</strong></a>
+    <span class="meta">exam: {{ c.exam_date }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No courses yet — add your first one to get a study plan.</p>
+{% endif %}
+{% endblock %}

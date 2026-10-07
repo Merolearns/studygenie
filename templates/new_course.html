@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Add course — StudyGenie{% endblock %}
+{% block content %}
+<h1>Add a course</h1>
+<form method="post" class="form">
+  <label>Course name
+    <input name="name" required maxlength="80" placeholder="e.g. CPSC 483 Machine Learning">
+  </label>
+  <label>Exam date
+    <input type="date" name="exam_date" required>
+  </label>
+  <button class="btn" type="submit">Save course</button>
+</form>
+{% endblock %}

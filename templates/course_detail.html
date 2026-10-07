@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ course.name }} — StudyGenie{% endblock %}
+{% block content %}
+<h1>{{ course.name }}</h1>
+<p class="meta">exam: {{ course.exam_date }}</p>
+
+<h2>Topics</h2>
+{% if topics %}
+<ul class="topics">
+  {% for t in topics %}
+  <li>
+    <span class="diff d{{ t.difficulty }}" title="difficulty {{ t.difficulty }}/5">{{ t.difficulty }}</span>
+    {{ t.title }}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No topics yet — break the course into topics below.</p>
+{% endif %}
+
+<h2>Add a topic</h2>
+<form method="post" action="{{ url_for('add_topic', course_id=course.id) }}" class="form">
+  <label>Topic
+    <input name="title" required maxlength="120" placeholder="e.g. Decision trees">
+  </label>
+  <label>Difficulty (1 easy – 5 hard)
+    <input type="number" name="difficulty" min="1" max="5" value="3">
+  </label>
+  <button class="btn" type="submit">Add topic</button>
+</form>
+{% endblock %}
