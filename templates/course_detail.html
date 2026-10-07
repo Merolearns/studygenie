@@ -18,6 +18,17 @@
 <p class="empty">No topics yet — break the course into topics below.</p>
 {% endif %}
 
+<h2>Study plan</h2>
+{% if session_count %}
+<p class="meta">{{ session_count }} sessions planned.</p>
+{% endif %}
+<form method="post" action="{{ url_for('generate_plan', course_id=course.id) }}" class="form">
+  <label>Minutes per day
+    <input type="number" name="minutes_per_day" min="10" max="240" value="60">
+  </label>
+  <button class="btn" type="submit">Generate study plan</button>
+</form>
+
 <h2>Add a topic</h2>
 <form method="post" action="{{ url_for('add_topic', course_id=course.id) }}" class="form">
   <label>Topic
