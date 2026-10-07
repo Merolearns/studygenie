@@ -86,3 +86,32 @@ def list_topics(db_path, course_id):
         return [dict(r) for r in conn.execute(
             "SELECT * FROM topics WHERE course_id = ? ORDER BY difficulty DESC, id",
             (course_id,))]
+
+
+# --- sessions ---
+
+def add_session(db_path, course_id, topic_id, planned_date, minutes):
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO sessions (course_id, topic_id, planned_date, minutes)"
+            " VALUES (?, ?, ?, ?)",
+            (course_id, topic_id, planned_date, minutes),
+        )
+        return cur.lastrowid
+
+
+def list_sessions(db_path, course_id):
+    with connect(db_path) as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT s.*, t.title AS topic_title FROM sessions s"
+            " LEFT JOIN topics t ON s.topic_id = t.id"
+            " WHERE s.course_id = ? ORDER BY s.planned_date, s.id",
+            (course_id,))]
+
+
+def clear_pending_sessions(db_path, course_id):
+    """Delete the course's unstarted sessions (finished ones are kept)."""
+    with connect(db_path) as conn:
+        conn.execute(
+            "DELETE FROM sessions WHERE course_id = ? AND completed = 0",
+            (course_id,))
