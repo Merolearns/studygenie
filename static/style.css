@@ -40,3 +40,23 @@ main { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
 }
 .d1 { background: #7ce38b; } .d2 { background: #b8e37c; } .d3 { background: #ffd479; }
 .d4 { background: #ff9d6b; } .d5 { background: #ff6b6b; }
+header { justify-content: flex-start; }
+nav { margin-left: auto; }
+.nav-link { color: #9aa4bb; text-decoration: none; font-size: .95rem; }
+.nav-link:hover { color: #fff; }
+.week { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.day {
+  background: #1a2233; border-radius: 10px; padding: 1rem 1.2rem;
+  border: 2px solid transparent;
+}
+.day.today { border-color: #4f7cff; }
+.day h2 { margin: 0 0 .5rem; font-size: 1.05rem; }
+.sessions { list-style: none; padding: 0; display: grid; gap: .5rem; }
+.sessions li { display: flex; gap: .7rem; align-items: flex-start; }
+.check {
+  background: none; border: 2px solid #4f7cff; border-radius: 50%;
+  width: 1.7rem; height: 1.7rem; color: #4f7cff; cursor: pointer;
+  font-size: .95rem; line-height: 1; padding: 0; flex-shrink: 0;
+}
+.sessions li.done .check { background: #4f7cff; color: #fff; }
+.sessions li.done .session-title { text-decoration: line-through; color: #9aa4bb; }

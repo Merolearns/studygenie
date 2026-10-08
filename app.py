@@ -1,5 +1,6 @@
-"""StudyGenie web app — day 2: course & topic management + plan generation."""
+"""StudyGenie web app — day 3: week timetable with session check-off."""
 import os
+from datetime import date, timedelta
 from flask import Flask, render_template, request, redirect, url_for
 
 from studygenie import db, scheduler
@@ -62,6 +63,33 @@ def generate_plan(course_id):
     plan = scheduler.generate_plan(DB_PATH, course_id, minutes_per_day=minutes)
     scheduler.save_plan(DB_PATH, course_id, plan)
     return redirect(url_for("course_detail", course_id=course_id))
+
+
+@app.route("/plan")
+def plan():
+    """Seven-day view of planned sessions, today highlighted."""
+    today = date.today()
+    sessions = db.list_sessions_for_week(DB_PATH, today.isoformat())
+    by_day = {}
+    for s in sessions:
+        by_day.setdefault(s["planned_date"], []).append(s)
+    days = []
+    for i in range(7):
+        day = today + timedelta(days=i)
+        days.append({
+            "date": day.strftime("%b %d"),
+            "iso": day.isoformat(),
+            "label": "Today" if day == today else day.strftime("%A"),
+            "is_today": day == today,
+            "sessions": by_day.get(day.isoformat(), []),
+        })
+    return render_template("plan.html", days=days)
+
+
+@app.route("/sessions/<int:session_id>/done", methods=["POST"])
+def toggle_done(session_id):
+    db.toggle_session(DB_PATH, session_id)
+    return redirect(request.referrer or url_for("plan"))
 
 
 if __name__ == "__main__":

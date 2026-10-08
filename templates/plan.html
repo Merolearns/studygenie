@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}This week's plan — StudyGenie{% endblock %}
+{% block content %}
+<h1>This week's plan</h1>
+<p class="meta">Check off sessions as you finish them.</p>
+<div class="week">
+  {% for d in days %}
+  <section class="day{% if d.is_today %} today{% endif %}">
+    <h2>{{ d.label }} <span class="meta">{{ d.date }}</span></h2>
+    {% if d.sessions %}
+    <ul class="sessions">
+      {% for s in d.sessions %}
+      <li class="{% if s.completed %}done{% endif %}">
+        <form method="post" action="{{ url_for('toggle_done', session_id=s.id) }}">
+          <button class="check" type="submit" title="toggle completed">{% if s.completed %}&#10003;{% else %}&#9675;{% endif %}</button>
+        </form>
+        <div>
+          <span class="session-title">{{ s.topic_title or "Study session" }}</span><br>
+          <span class="meta">{{ s.course_name }} &middot; {{ s.minutes }} min</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">Nothing planned.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
