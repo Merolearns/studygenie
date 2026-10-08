@@ -16,7 +16,7 @@ Original code, built in public, one honest step at a time.
 - Unit tests for the engine (overdue topic prioritized, etc.)
 - "Generate study plan" button on the course page saves sessions to the DB
 
-## Day 3 (Oct 8) — Timetable UI
+## Day 3 (Oct 8) — Timetable UI ✅
 - Week view + "today" view of planned sessions
 - Check off completed sessions, minutes studied log
 - Session model wired to the plan generator
