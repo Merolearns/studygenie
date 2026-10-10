@@ -1,9 +1,9 @@
-"""StudyGenie web app — day 3: week timetable with session check-off."""
+"""StudyGenie web app — day 4: progress dashboard on top of the timetable."""
 import os
 from datetime import date, timedelta
 from flask import Flask, render_template, request, redirect, url_for
 
-from studygenie import db, scheduler
+from studygenie import db, scheduler, progress
 
 DB_PATH = os.environ.get("STUDYGENIE_DB", "studygenie.db")
 
@@ -19,7 +19,24 @@ def _ensure_db():
 @app.route("/")
 def index():
     courses = db.list_courses(DB_PATH)
+    by_id = {p["id"]: p for p in progress.course_progress(DB_PATH)}
+    for c in courses:
+        c["progress_pct"] = by_id.get(c["id"], {}).get("pct")
     return render_template("index.html", courses=courses)
+
+
+@app.route("/progress")
+def progress_page():
+    pct, done, total = progress.weekly_completion(DB_PATH)
+    return render_template(
+        "progress.html",
+        streak=progress.streak(DB_PATH),
+        weekly_pct=pct,
+        weekly_done=done,
+        weekly_total=total,
+        total_minutes=progress.total_minutes(DB_PATH),
+        chart=progress.minutes_by_day(DB_PATH),
+    )
 
 
 @app.route("/courses/new", methods=["GET", "POST"])

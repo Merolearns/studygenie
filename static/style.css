@@ -21,8 +21,10 @@ main { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
 .card {
   background: #1a2233; border-radius: 10px; padding: 1rem 1.2rem;
   display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; row-gap: .4rem;
 }
 .card a { color: #fff; text-decoration: none; }
+.nav-link + .nav-link { margin-left: 1rem; }
 .meta { color: #9aa4bb; font-size: .9rem; }
 .empty { color: #9aa4bb; }
 .form { display: grid; gap: 1rem; max-width: 420px; margin-top: 1rem; }
@@ -60,3 +62,13 @@ nav { margin-left: auto; }
 }
 .sessions li.done .check { background: #4f7cff; color: #fff; }
 .sessions li.done .session-title { text-decoration: line-through; color: #9aa4bb; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: 1.5rem 0; }
+.stat { background: #1a2233; border-radius: 10px; padding: 1rem .5rem; text-align: center; }
+.stat-num { font-size: 1.7rem; font-weight: 700; }
+.stat-label { color: #9aa4bb; font-size: .85rem; margin-top: .25rem; }
+.chart-wrap { background: #1a2233; border-radius: 10px; padding: 1rem; }
+.progress-bar {
+  flex: 1 1 100%; height: 8px; background: #2c3852;
+  border-radius: 4px; overflow: hidden;
+}
+.progress-fill { height: 100%; background: #4f7cff; border-radius: 4px; }

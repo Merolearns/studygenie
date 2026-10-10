@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Progress — StudyGenie{% endblock %}
+{% block content %}
+<h1>Progress</h1>
+<div class="stats">
+  <div class="stat">
+    <div class="stat-num">&#128293; {{ streak }}</div>
+    <div class="stat-label">day streak</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">{{ weekly_pct }}%</div>
+    <div class="stat-label">done this week ({{ weekly_done }}/{{ weekly_total }} sessions)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">{{ total_minutes }}</div>
+    <div class="stat-label">minutes studied</div>
+  </div>
+</div>
+
+<h2>Minutes per day</h2>
+<div class="chart-wrap">
+  <canvas id="weekchart"></canvas>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const chartData = {{ chart | tojson }};
+new Chart(document.getElementById("weekchart"), {
+  type: "bar",
+  data: {
+    labels: chartData.map(d => d.label),
+    datasets: [{ label: "Minutes studied", data: chartData.map(d => d.minutes) }]
+  },
+  options: {
+    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    plugins: { legend: { display: false } }
+  }
+});
+</script>
+{% endblock %}

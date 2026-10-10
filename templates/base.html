@@ -10,7 +10,10 @@
   <header>
     <a class="brand" href="{{ url_for('index') }}">&#128218; StudyGenie</a>
     <span class="tagline">turn your courses into a study plan</span>
-    <nav><a class="nav-link" href="{{ url_for('plan') }}">&#128197; This week</a></nav>
+    <nav>
+      <a class="nav-link" href="{{ url_for('plan') }}">&#128197; This week</a>
+      <a class="nav-link" href="{{ url_for('progress_page') }}">&#128202; Progress</a>
+    </nav>
   </header>
   <main>
     {% block content %}{% endblock %}
