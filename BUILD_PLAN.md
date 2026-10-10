@@ -21,7 +21,7 @@ Original code, built in public, one honest step at a time.
 - Check off completed sessions, minutes studied log
 - Session model wired to the plan generator
 
-## Day 4 (Oct 9) — Progress tracking
+## Day 4 (Oct 9) — Progress tracking ✅
 - Streak counter, completion %, per-course progress bars
 - Chart.js weekly minutes chart
 - Dashboard summary cards
