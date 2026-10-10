@@ -8,6 +8,14 @@
   <li class="card">
     <a href="{{ url_for('course_detail', course_id=c.id) }}"><strong>{{ c.name }}</strong></a>
     <span class="meta">exam: {{ c.exam_date }}</span>
+    {% if c.progress_pct is not none %}
+    <div class="progress-bar" title="{{ c.progress_pct }}% of sessions done">
+      <div class="progress-fill" style="width: {{ c.progress_pct }}%"></div>
+    </div>
+    <span class="meta">{{ c.progress_pct }}%</span>
+    {% else %}
+    <span class="meta">no plan yet</span>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>
