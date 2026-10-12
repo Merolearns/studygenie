@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Edit topic — StudyGenie{% endblock %}
+{% block content %}
+<h1>Edit topic <span class="muted">({{ course.name }})</span></h1>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+<form method="post" class="form">
+  <label>Topic
+    <input name="title" required maxlength="120" value="{{ title if title is defined else topic.title }}">
+  </label>
+  <label>Difficulty (1 easy – 5 hard)
+    <input type="number" name="difficulty" min="1" max="5"
+           value="{{ difficulty if difficulty is defined else topic.difficulty }}">
+  </label>
+  <div class="notes-actions">
+    <button class="btn" type="submit">Save changes</button>
+    <a class="btn small" href="{{ url_for('course_detail', course_id=course.id) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

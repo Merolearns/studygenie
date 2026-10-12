@@ -75,6 +75,40 @@ def get_course(db_path, course_id):
         return dict(row) if row else None
 
 
+def update_course(db_path, course_id, name, exam_date):
+    """Update name/exam_date; returns rows updated (0 or 1)."""
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE courses SET name = ?, exam_date = ? WHERE id = ?",
+            (name.strip(), exam_date, course_id),
+        )
+        return cur.rowcount
+
+
+def delete_course(db_path, course_id):
+    """Delete a course; topics and sessions cascade atomically.
+
+    Returns rows deleted (0 or 1). Completed study history goes with it —
+    callers must confirm with the user first.
+    """
+    with connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
+        return cur.rowcount
+
+
+def course_delete_preview(db_path, course_id):
+    """Counts shown on the delete-confirmation page."""
+    with connect(db_path) as conn:
+        topics = conn.execute(
+            "SELECT COUNT(*) AS n FROM topics WHERE course_id = ?",
+            (course_id,)).fetchone()["n"]
+        sessions = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(completed), 0) AS done"
+            " FROM sessions WHERE course_id = ?", (course_id,)).fetchone()
+        return {"topics": topics, "sessions": sessions["n"],
+                "completed": sessions["done"]}
+
+
 # --- topics ---
 
 def add_topic(db_path, course_id, title, difficulty=3):
@@ -92,6 +126,42 @@ def list_topics(db_path, course_id):
         return [dict(r) for r in conn.execute(
             "SELECT * FROM topics WHERE course_id = ? ORDER BY difficulty DESC, id",
             (course_id,))]
+
+
+def get_topic(db_path, topic_id):
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM topics WHERE id = ?", (topic_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_topic(db_path, topic_id, title, difficulty=3):
+    """Update title/difficulty; returns rows updated (0 or 1)."""
+    difficulty = max(1, min(5, int(difficulty)))
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE topics SET title = ?, difficulty = ? WHERE id = ?",
+            (title.strip(), difficulty, topic_id),
+        )
+        return cur.rowcount
+
+
+def delete_topic(db_path, topic_id):
+    """Delete a topic; its sessions are kept with topic detached (SET NULL).
+
+    Returns rows deleted (0 or 1).
+    """
+    with connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
+        return cur.rowcount
+
+
+def count_topic_sessions(db_path, topic_id):
+    """Sessions referencing a topic (shown on delete confirmation)."""
+    with connect(db_path) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS n FROM sessions WHERE topic_id = ?",
+            (topic_id,)).fetchone()["n"]
 
 
 # --- sessions ---

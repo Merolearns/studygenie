@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Delete course — StudyGenie{% endblock %}
+{% block content %}
+<h1>Delete "{{ course.name }}"?</h1>
+<div class="ai-note">
+  <p>&#9888; This is permanent. Deleting this course will also delete:</p>
+  <ul>
+    <li>{{ preview.topics }} topic{{ "s" if preview.topics != 1 }}</li>
+    <li>{{ preview.sessions }} planned study session{{ "s" if preview.sessions != 1 }},
+      including {{ preview.completed }} completed</li>
+  </ul>
+  <p>Your other courses are not affected.</p>
+</div>
+<form method="post" class="form">
+  <div class="notes-actions">
+    <button class="btn danger" type="submit" name="confirm" value="yes">Yes, delete everything</button>
+    <a class="btn small" href="{{ url_for('course_detail', course_id=course.id) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

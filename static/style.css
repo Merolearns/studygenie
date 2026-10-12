@@ -118,3 +118,11 @@ nav { margin-left: auto; }
 .review-list p { margin: .4rem 0; }
 fieldset { border: 1px solid #2c3852; border-radius: 8px; padding: .75rem 1rem; margin-bottom: 1rem; }
 legend { padding: 0 .5rem; color: #9aa4bb; }
+.success {
+  background: #12351f; border: 1px solid #2c7a3f; color: #b9e6c3;
+  border-radius: 8px; padding: .75rem 1rem;
+}
+.link-btn { font-size: .85em; margin-left: .5rem; color: #9ec1ff; }
+.danger-text { color: #ff9d9d; }
+.btn.danger { background: #a02c2c; }
+.btn.danger:hover { background: #c03838; }

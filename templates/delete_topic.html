@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Delete topic — StudyGenie{% endblock %}
+{% block content %}
+<h1>Delete "{{ topic.title }}"?</h1>
+<div class="ai-note">
+  <p>&#9888; This is permanent.</p>
+  {% if session_count %}
+  <p>{{ session_count }} planned study session{{ "s" if session_count != 1 }}
+  reference{{ "s" if session_count == 1 else "" }} this topic — they will be kept,
+  but detached from it.</p>
+  {% else %}
+  <p>No study sessions reference this topic.</p>
+  {% endif %}
+</div>
+<form method="post" class="form">
+  <div class="notes-actions">
+    <button class="btn danger" type="submit" name="confirm" value="yes">Yes, delete topic</button>
+    <a class="btn small" href="{{ url_for('course_detail', course_id=course.id) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

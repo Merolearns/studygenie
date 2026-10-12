@@ -1,8 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{{ course.name }} — StudyGenie{% endblock %}
 {% block content %}
+{% if notice == "course-updated" %}
+<p class="success">Course updated.</p>
+{% elif notice == "topic-updated" %}
+<p class="success">Topic updated.</p>
+{% elif notice == "topic-deleted" %}
+<p class="success">Topic deleted.</p>
+{% endif %}
 <h1>{{ course.name }}</h1>
-<p class="meta">exam: {{ course.exam_date }}</p>
+<p class="meta">exam: {{ course.exam_date }}
+  <a class="link-btn" href="{{ url_for('edit_course', course_id=course.id) }}">Edit</a>
+  <a class="link-btn danger-text" href="{{ url_for('delete_course', course_id=course.id) }}">Delete</a>
+</p>
 
 <h2>Topics</h2>
 {% if topics %}
@@ -11,6 +21,8 @@
   <li>
     <span class="diff d{{ t.difficulty }}" title="difficulty {{ t.difficulty }}/5">{{ t.difficulty }}</span>
     {{ t.title }}
+    <a class="link-btn" href="{{ url_for('edit_topic', course_id=course.id, topic_id=t.id) }}">Edit</a>
+    <a class="link-btn danger-text" href="{{ url_for('delete_topic', course_id=course.id, topic_id=t.id) }}">Delete</a>
   </li>
   {% endfor %}
 </ul>

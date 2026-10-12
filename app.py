@@ -56,7 +56,8 @@ def index():
     by_id = {p["id"]: p for p in progress.course_progress(DB_PATH)}
     for c in courses:
         c["progress_pct"] = by_id.get(c["id"], {}).get("pct")
-    return render_template("index.html", courses=courses)
+    return render_template("index.html", courses=courses,
+                           notice=request.args.get("notice"))
 
 
 @app.route("/progress")
@@ -122,7 +123,98 @@ def course_detail(course_id):
     return render_template(
         "course_detail.html", course=course, topics=topics,
         session_count=len(sessions), ai_enabled=ai.is_enabled(),
-        ai_plan=None)
+        ai_plan=None, notice=request.args.get("notice"))
+
+
+@app.route("/courses/<int:course_id>/edit", methods=["GET", "POST"])
+def edit_course(course_id):
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return "Course not found", 404
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        raw_date = request.form.get("exam_date", "")
+        error = None
+        if not name:
+            error = "Please enter a course name."
+        elif not _valid_exam_date(raw_date):
+            error = "Please enter a valid exam date (YYYY-MM-DD)."
+        if error is None:
+            db.update_course(DB_PATH, course_id, name, raw_date)
+            return redirect(url_for("course_detail", course_id=course_id,
+                                    notice="course-updated"))
+        return render_template("edit_course.html", course=course, error=error,
+                               name=name, exam_date=raw_date)
+    return render_template("edit_course.html", course=course)
+
+
+@app.route("/courses/<int:course_id>/delete", methods=["GET", "POST"])
+def delete_course(course_id):
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return "Course not found", 404
+    if request.method == "POST":
+        if request.form.get("confirm") == "yes":
+            db.delete_course(DB_PATH, course_id)
+            return redirect(url_for("index", notice="course-deleted"))
+        return redirect(url_for("course_detail", course_id=course_id))
+    preview = db.course_delete_preview(DB_PATH, course_id)
+    return render_template("delete_course.html", course=course,
+                           preview=preview)
+
+
+def _get_course_topic_or_404(course_id, topic_id):
+    """Topic belonging to the course, else None (covers missing course)."""
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return None, None
+    topic = db.get_topic(DB_PATH, topic_id)
+    if topic is None or topic["course_id"] != course_id:
+        return course, None
+    return course, topic
+
+
+@app.route("/courses/<int:course_id>/topics/<int:topic_id>/edit",
+           methods=["GET", "POST"])
+def edit_topic(course_id, topic_id):
+    course, topic = _get_course_topic_or_404(course_id, topic_id)
+    if course is None or topic is None:
+        return "Topic not found", 404
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        try:
+            difficulty = int(request.form.get("difficulty", 3))
+        except (TypeError, ValueError):
+            difficulty = 3
+        error = None
+        if not title:
+            error = "Please enter a topic title."
+        elif not 1 <= difficulty <= 5:
+            error = "Difficulty must be between 1 and 5."
+        if error is None:
+            db.update_topic(DB_PATH, topic_id, title, difficulty)
+            return redirect(url_for("course_detail", course_id=course_id,
+                                    notice="topic-updated"))
+        return render_template("edit_topic.html", course=course, topic=topic,
+                               error=error, title=title, difficulty=difficulty)
+    return render_template("edit_topic.html", course=course, topic=topic)
+
+
+@app.route("/courses/<int:course_id>/topics/<int:topic_id>/delete",
+           methods=["GET", "POST"])
+def delete_topic(course_id, topic_id):
+    course, topic = _get_course_topic_or_404(course_id, topic_id)
+    if course is None or topic is None:
+        return "Topic not found", 404
+    if request.method == "POST":
+        if request.form.get("confirm") == "yes":
+            db.delete_topic(DB_PATH, topic_id)
+            return redirect(url_for("course_detail", course_id=course_id,
+                                    notice="topic-deleted"))
+        return redirect(url_for("course_detail", course_id=course_id))
+    session_count = db.count_topic_sessions(DB_PATH, topic_id)
+    return render_template("delete_topic.html", course=course, topic=topic,
+                           session_count=session_count)
 
 
 @app.route("/courses/<int:course_id>/topics", methods=["POST"])
