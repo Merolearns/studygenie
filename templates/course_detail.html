@@ -26,12 +26,29 @@
   <label>Minutes per day
     <input type="number" name="minutes_per_day" min="10" max="240" value="60">
   </label>
+  <label class="check-label">
+    <input type="checkbox" name="use_availability" value="1">
+    Use my <a href="{{ url_for('availability') }}">weekly availability</a> instead
+  </label>
   <button class="btn" type="submit">Generate study plan</button>
 </form>
 
 <h2>AI practice</h2>
 <p class="meta">Practice quizzes and study tips, powered by Gemini (optional).</p>
 <p><a class="btn" href="{{ url_for('quiz', course_id=course.id) }}">Practice quiz</a></p>
+
+<h2>AI weekly plan</h2>
+<p class="meta">A human-readable week plan written by Gemini from your topics.</p>
+<form method="post" action="{{ url_for('ai_plan', course_id=course.id) }}" class="form">
+  <button class="btn" type="submit"{% if not ai_enabled %} disabled{% endif %}>Generate AI weekly plan</button>
+</form>
+{% if ai_plan and ai_plan.enabled %}
+  {% if ai_plan.error %}
+  <p class="error">The AI request failed: {{ ai_plan.error }}</p>
+  {% elif ai_plan.plan %}
+  <pre class="notes-output">{{ ai_plan.plan }}</pre>
+  {% endif %}
+{% endif %}
 
 <h2>Add a topic</h2>
 <form method="post" action="{{ url_for('add_topic', course_id=course.id) }}" class="form">

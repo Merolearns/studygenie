@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}AI notes — StudyGenie{% endblock %}
+{% block content %}
+<h1>&#128221; AI study notes</h1>
+
+{% if not ai_enabled %}
+<div class="ai-note">
+  <p>&#129302; AI features are off. To enable notes, set the
+  <code>GEMINI_API_KEY</code> environment variable to a free API key from
+  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+  and restart the app.</p>
+</div>
+{% endif %}
+
+<form method="post" class="form" enctype="multipart/form-data">
+  <label>Study material
+    <textarea name="document_content" rows="10" placeholder="Paste your lecture notes, textbook excerpts, or any study material here (at least 50 characters)..." required>{{ document_content or "" }}</textarea>
+  </label>
+  <label>Or upload a .txt file
+    <input type="file" name="document_file" accept=".txt,text/plain">
+  </label>
+  <div class="form-row">
+    <label>Style
+      <select name="note_style">
+        <option value="comprehensive"{% if note_style == "comprehensive" %} selected{% endif %}>Comprehensive</option>
+        <option value="concise"{% if note_style == "concise" %} selected{% endif %}>Concise</option>
+        <option value="bullet-points"{% if note_style == "bullet-points" %} selected{% endif %}>Bullet points</option>
+        <option value="outline"{% if note_style == "outline" %} selected{% endif %}>Outline</option>
+      </select>
+    </label>
+    <label>Focus area (optional)
+      <input type="text" name="focus_area" placeholder="e.g. key definitions" value="{{ focus_area or "" }}">
+    </label>
+  </div>
+  <button class="btn" type="submit"{% if not ai_enabled %} disabled{% endif %}>Generate notes</button>
+</form>
+
+{% if result and result.enabled %}
+  {% if result.error %}
+  <p class="error">The AI request failed: {{ result.error }}</p>
+  {% elif result.notes %}
+  <h2>Generated notes <span class="muted">({{ result.style }})</span></h2>
+  <div class="notes-actions">
+    <button class="btn small" type="button" onclick="navigator.clipboard.writeText(document.getElementById('notes-output').innerText); this.textContent='Copied!';">Copy</button>
+    <button class="btn small" type="button" onclick="const b=new Blob([document.getElementById('notes-output').innerText],{type:'text/markdown'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='study-notes.md'; a.click();">Download .md</button>
+  </div>
+  <pre id="notes-output" class="notes-output">{{ result.notes }}</pre>
+  {% endif %}
+{% endif %}
+{% endblock %}

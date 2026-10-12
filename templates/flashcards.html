@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Flashcards — StudyGenie{% endblock %}
+{% block content %}
+<h1>&#127183; Flashcards</h1>
+
+{% if not ai_enabled %}
+<div class="ai-note">
+  <p>&#129302; AI features are off. To enable flashcards, set the
+  <code>GEMINI_API_KEY</code> environment variable to a free API key from
+  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+  and restart the app.</p>
+</div>
+{% endif %}
+
+<form method="post" class="form" enctype="multipart/form-data">
+  <label>Study material
+    <textarea name="document_content" rows="8" placeholder="Paste notes or a topic summary (at least 50 characters)..." required>{{ document_content or "" }}</textarea>
+  </label>
+  <label>Or upload a .txt file
+    <input type="file" name="document_file" accept=".txt,text/plain">
+  </label>
+  <div class="form-row">
+    <label>Cards
+      <select name="count">
+        {% for n in [4, 8, 12, 16, 20] %}
+        <option value="{{ n }}"{% if count == n %} selected{% endif %}>{{ n }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <button class="btn" type="submit"{% if not ai_enabled %} disabled{% endif %}>Generate flashcards</button>
+</form>
+
+{% if result and result.enabled %}
+  {% if result.error %}
+  <p class="error">The AI request failed: {{ result.error }}</p>
+  {% elif result.flashcards %}
+  <h2>{{ result.flashcards|length }} cards</h2>
+  <div class="flashcard-wrap">
+    <p class="muted center" id="card-pos"></p>
+    <div class="flashcard" id="flashcard" onclick="flipCard()">
+      <div class="card-face card-front" id="card-front"></div>
+      <div class="card-face card-back" id="card-back" hidden></div>
+    </div>
+    <div class="flashcard-nav">
+      <button class="btn small" type="button" onclick="prevCard()">&#8592; Prev</button>
+      <button class="btn small" type="button" onclick="flipCard()">Flip</button>
+      <button class="btn small" type="button" onclick="nextCard()">Next &#8594;</button>
+    </div>
+  </div>
+  <script>
+    const cards = {{ result.flashcards|tojson }};
+    let idx = 0, flipped = false;
+    function render() {
+      document.getElementById('card-pos').textContent = `Card ${idx + 1} of ${cards.length}`;
+      document.getElementById('card-front').textContent = cards[idx].front;
+      document.getElementById('card-back').textContent = cards[idx].back;
+      document.getElementById('card-front').hidden = flipped;
+      document.getElementById('card-back').hidden = !flipped;
+    }
+    function flipCard() { flipped = !flipped; render(); }
+    function nextCard() { idx = (idx + 1) % cards.length; flipped = false; render(); }
+    function prevCard() { idx = (idx - 1 + cards.length) % cards.length; flipped = false; render(); }
+    render();
+  </script>
+  {% else %}
+  <p class="empty">No flashcards came back. Try longer or clearer material.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

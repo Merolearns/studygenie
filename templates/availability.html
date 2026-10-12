@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Weekly availability — StudyGenie{% endblock %}
+{% block content %}
+<h1>&#128197; Weekly availability</h1>
+<p class="meta">How many minutes can you study each day? The scheduler uses
+these budgets when you tick "use my availability". Days set to 0 are skipped.</p>
+
+<form method="post" class="form">
+  {% for d in days %}
+  <label>{{ d.name }}
+    <input type="number" name="day_{{ d.weekday }}" min="0" max="480"
+           value="{{ availability.get(d.weekday, 60) }}">
+  </label>
+  {% endfor %}
+  <button class="btn" type="submit">Save availability</button>
+</form>
+{% if saved %}
+<p class="meta">Saved.</p>
+{% endif %}
+{% endblock %}

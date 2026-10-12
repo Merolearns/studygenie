@@ -62,17 +62,25 @@ def _parse(value):
     return date.fromisoformat(value)
 
 
-def generate_plan(db_path, course_id, minutes_per_day=60, start_date=None):
+def generate_plan(db_path, course_id, minutes_per_day=60, start_date=None,
+                  use_availability=False):
     """Build a study plan for a course.
 
     Returns a list of dicts: {date, topic_id, topic_title, minutes}.
     Harder + more urgent topics get earlier, bigger blocks; each day's
-    total stays within minutes_per_day.
+    total stays within its budget. With use_availability, each day's
+    budget comes from the user's weekly availability instead of the
+    flat minutes_per_day.
     """
     start = _parse(start_date) if start_date else date.today()
     course = db.get_course(db_path, course_id)
     exam = _parse(course["exam_date"])
     topics = db.list_topics(db_path, course_id)
+
+    def budget(day):
+        if use_availability:
+            return db.minutes_for(db_path, day)
+        return minutes_per_day
 
     # hardest/most urgent topics first
     ranked = sorted(
@@ -84,18 +92,24 @@ def generate_plan(db_path, course_id, minutes_per_day=60, start_date=None):
     # days we can still study: today through the exam; an overdue
     # exam just leaves us today
     window = max(1, (exam - start).days + 1)
-    per_day = max(1, minutes_per_day // MIN_BLOCK)
 
     # pack first sessions day by day, hardest first; overflow lands
-    # on the last available day
+    # on the last available day. Days with a zero budget are skipped.
     first_dates = {}
     day, placed_today = start, 0
+    per_day = max(1, budget(start) // MIN_BLOCK)
     for t in ranked:
+        # skip days with no availability
+        while budget(day) < MIN_BLOCK and (day - start).days + 1 < window:
+            day = day + timedelta(days=1)
+            placed_today = 0
+            per_day = max(1, budget(day) // MIN_BLOCK)
         first_dates[t["id"]] = day.isoformat()
         placed_today += 1
         if placed_today >= per_day and (day - start).days + 1 < window:
             day = day + timedelta(days=1)
             placed_today = 0
+            per_day = max(1, budget(day) // MIN_BLOCK)
 
     # gather each day's sessions: first sessions plus spaced reviews
     by_day = {}
@@ -108,12 +122,15 @@ def generate_plan(db_path, course_id, minutes_per_day=60, start_date=None):
                 # reviews are shorter than first passes
                 by_day.setdefault(review.isoformat(), []).append((t, 0.5))
 
-    # turn weights into minutes, keeping each day within budget
+    # turn weights into minutes, keeping each day within its budget
     plan = []
     for day_iso in sorted(by_day):
         sessions = by_day[day_iso]
+        day_budget = budget(date.fromisoformat(day_iso))
+        if day_budget < MIN_BLOCK:
+            continue  # no availability this day; drop its sessions
         weights = [t["difficulty"] * kind_weight for t, kind_weight in sessions]
-        for (t, _), minutes in zip(sessions, allocate_minutes(weights, minutes_per_day)):
+        for (t, _), minutes in zip(sessions, allocate_minutes(weights, day_budget)):
             plan.append({
                 "date": day_iso,
                 "topic_id": t["id"],

@@ -9,6 +9,22 @@ DB_PATH = os.environ.get("STUDYGENIE_DB", "studygenie.db")
 
 app = Flask(__name__)
 
+MAX_UPLOAD_CHARS = 20000  # cap pasted/uploaded text sent to the AI
+
+
+def _read_document_content():
+    """Pasted textarea text, or text extracted from an uploaded .txt file."""
+    doc = request.form.get("document_content", "").strip()
+    f = request.files.get("document_file")
+    if f and f.filename:
+        try:
+            text = f.read().decode("utf-8", errors="replace").strip()
+            if text:
+                doc = text[:MAX_UPLOAD_CHARS]
+        except Exception:
+            pass
+    return doc
+
 
 @app.before_request
 def _ensure_db():
@@ -59,7 +75,8 @@ def course_detail(course_id):
     sessions = db.list_sessions(DB_PATH, course_id)
     return render_template(
         "course_detail.html", course=course, topics=topics,
-        session_count=len(sessions))
+        session_count=len(sessions), ai_enabled=ai.is_enabled(),
+        ai_plan=None)
 
 
 @app.route("/courses/<int:course_id>/topics", methods=["POST"])
@@ -77,7 +94,10 @@ def generate_plan(course_id):
     if course is None:
         return "Course not found", 404
     minutes = request.form.get("minutes_per_day", 60, type=int)
-    plan = scheduler.generate_plan(DB_PATH, course_id, minutes_per_day=minutes)
+    use_avail = request.form.get("use_availability") == "1"
+    plan = scheduler.generate_plan(DB_PATH, course_id,
+                                   minutes_per_day=minutes,
+                                   use_availability=use_avail)
     scheduler.save_plan(DB_PATH, course_id, plan)
     return redirect(url_for("course_detail", course_id=course_id))
 
@@ -115,7 +135,9 @@ def quiz(course_id):
         if request.form.get("action") == "tips":
             tips = ai.generate_tips(course["name"])
         elif request.form.get("topic"):
-            quiz_data = ai.generate_quiz(request.form["topic"])
+            quiz_data = ai.generate_quiz(
+                request.form["topic"],
+                request.form.get("difficulty", "medium"))
     return render_template(
         "quiz.html", course=course, topics=topics,
         ai_enabled=ai.is_enabled(), quiz=quiz_data, tips=tips,
@@ -126,6 +148,85 @@ def quiz(course_id):
 def toggle_done(session_id):
     db.toggle_session(DB_PATH, session_id)
     return redirect(request.referrer or url_for("plan"))
+
+
+@app.route("/notes", methods=["GET", "POST"])
+def notes():
+    """AI study notes: paste material, pick a style, get structured notes."""
+    result, doc, style, focus = None, "", "comprehensive", ""
+    if request.method == "POST":
+        doc = _read_document_content()
+        style = request.form.get("note_style", "comprehensive")
+        focus = request.form.get("focus_area", "").strip()
+        if len(doc) >= 50:
+            result = ai.generate_notes(doc, style, focus or None)
+        else:
+            result = {"enabled": True,
+                      "error": "Please paste at least 50 characters."}
+    return render_template(
+        "notes.html", ai_enabled=ai.is_enabled(), result=result,
+        document_content=doc, note_style=style, focus_area=focus,
+    )
+
+
+@app.route("/flashcards", methods=["GET", "POST"])
+def flashcards():
+    """AI flashcards: paste material, flip through generated cards."""
+    result, doc, count = None, "", 8
+    if request.method == "POST":
+        doc = _read_document_content()
+        count = request.form.get("count", 8, type=int)
+        if len(doc) >= 50:
+            result = ai.generate_flashcards(doc, count)
+        else:
+            result = {"enabled": True,
+                      "error": "Please paste at least 50 characters."}
+    return render_template(
+        "flashcards.html", ai_enabled=ai.is_enabled(), result=result,
+        document_content=doc, count=count,
+    )
+
+
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday",
+            "Friday", "Saturday", "Sunday"]
+
+
+@app.route("/availability", methods=["GET", "POST"])
+def availability():
+    """Set per-weekday study minutes used by the scheduler."""
+    saved = False
+    if request.method == "POST":
+        minutes = {}
+        for wd in range(7):
+            raw = request.form.get(f"day_{wd}", "")
+            try:
+                minutes[wd] = max(0, int(raw))
+            except (TypeError, ValueError):
+                minutes[wd] = db.DEFAULT_MINUTES
+        db.set_availability(DB_PATH, minutes)
+        saved = True
+    return render_template(
+        "availability.html",
+        days=[{"weekday": i, "name": n} for i, n in enumerate(WEEKDAYS)],
+        availability=db.get_availability(DB_PATH),
+        saved=saved,
+    )
+
+
+@app.route("/courses/<int:course_id>/ai-plan", methods=["POST"])
+def ai_plan(course_id):
+    """AI-written weekly plan for a course (complements the scheduler)."""
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return "Course not found", 404
+    topics = db.list_topics(DB_PATH, course_id)
+    sessions = db.list_sessions(DB_PATH, course_id)
+    plan = ai.generate_weekly_plan(
+        course["name"], topics, course.get("exam_date"))
+    return render_template(
+        "course_detail.html", course=course, topics=topics,
+        session_count=len(sessions), ai_enabled=ai.is_enabled(),
+        ai_plan=plan)
 
 
 if __name__ == "__main__":

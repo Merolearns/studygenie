@@ -15,11 +15,20 @@
 <h2>Quiz me</h2>
 {% if topics %}
 <form method="post" class="form">
-  <label>Topic
-    <select name="topic">
-      {% for t in topics %}<option>{{ t.title }}</option>{% endfor %}
-    </select>
-  </label>
+  <div class="form-row">
+    <label>Topic
+      <select name="topic">
+        {% for t in topics %}<option>{{ t.title }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Difficulty
+      <select name="difficulty">
+        <option value="easy">Easy</option>
+        <option value="medium" selected>Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </label>
+  </div>
   <button class="btn" type="submit" name="action" value="quiz"{% if not ai_enabled %} disabled{% endif %}>Generate quiz</button>
 </form>
 {% else %}

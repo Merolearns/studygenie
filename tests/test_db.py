@@ -53,3 +53,26 @@ def test_difficulty_clamped():
     diffs = sorted(t["difficulty"] for t in topics)
     assert diffs == [1, 5]
     os.unlink(path)
+
+
+# --- availability ---
+
+def test_availability_defaults_and_roundtrip(tmp_path):
+    from studygenie import db as dbm
+    path = str(tmp_path / "a.db")
+    dbm.init_db(path)
+    assert dbm.get_availability(path) == {}
+    assert dbm.minutes_for(path, "2026-10-12") == 60  # Monday default
+    dbm.set_availability(path, {0: 90, 6: 0})
+    assert dbm.get_availability(path) == {0: 90, 6: 0}
+    assert dbm.minutes_for(path, "2026-10-12") == 90  # Monday
+    assert dbm.minutes_for(path, "2026-10-18") == 0   # Sunday
+    assert dbm.minutes_for(path, "2026-10-13") == 60  # Tuesday default
+
+
+def test_availability_clamps_and_ignores_bad_weekdays(tmp_path):
+    from studygenie import db as dbm
+    path = str(tmp_path / "a.db")
+    dbm.init_db(path)
+    dbm.set_availability(path, {1: -5, 9: 30})
+    assert dbm.get_availability(path) == {1: 0}

@@ -111,3 +111,42 @@ def test_save_plan_replaces_pending():
     scheduler.save_plan(path, cid, plan)
     assert len(db.list_sessions(path, cid)) == first_count
     os.unlink(path)
+
+
+# --- availability-aware scheduling ---
+
+def _course_with_topics(db_path):
+    from studygenie import db as dbm
+    cid = dbm.add_course(db_path, "Physics",
+                         (date.today() + timedelta(days=14)).isoformat())
+    for title, diff in [("Kinematics", 5), ("Forces", 4), ("Energy", 3)]:
+        dbm.add_topic(db_path, cid, title, diff)
+    return cid
+
+
+def test_availability_zero_day_skipped(tmp_path):
+    from studygenie import db as dbm
+    from studygenie import scheduler as sched
+    path = str(tmp_path / "s.db")
+    dbm.init_db(path)
+    cid = _course_with_topics(path)
+    # zero out every weekday except Monday
+    dbm.set_availability(path, {i: (120 if i == 0 else 0) for i in range(7)})
+    plan = sched.generate_plan(path, cid, use_availability=True,
+                               start_date=date.today().isoformat())
+    assert plan, "plan should not be empty"
+    for s in plan:
+        assert date.fromisoformat(s["date"]).weekday() == 0
+
+
+def test_availability_off_uses_flat_budget(tmp_path):
+    from studygenie import db as dbm
+    from studygenie import scheduler as sched
+    path = str(tmp_path / "s.db")
+    dbm.init_db(path)
+    cid = _course_with_topics(path)
+    dbm.set_availability(path, {i: 0 for i in range(7)})
+    plan = sched.generate_plan(path, cid, minutes_per_day=60,
+                               use_availability=False,
+                               start_date=date.today().isoformat())
+    assert plan, "flat budget should ignore availability"
