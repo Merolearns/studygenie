@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Study guide — {{ course.name }}{% endblock %}
+{% block content %}
+<h1>&#128214; Study guide: {{ course.name }}</h1>
+<p class="meta">exam: {{ course.exam_date }}</p>
+
+{% if not ai_enabled %}
+<div class="ai-note">
+  <p>&#129302; AI features are off. To enable study guides, set the
+  <code>GEMINI_API_KEY</code> environment variable to a free API key from
+  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+  and restart the app.</p>
+</div>
+{% endif %}
+
+<form method="post" class="form">
+  {% if topics %}
+  <fieldset>
+    <legend>Include topics</legend>
+    {% for t in topics %}
+    <label class="check-label">
+      <input type="checkbox" name="topic_ids" value="{{ t.id }}"
+             {% if t.id in selected_ids %}checked{% endif %}>
+      {{ t.title }}
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% else %}
+  <p class="empty">This course has no topics yet — the guide will be built from your notes below.</p>
+  {% endif %}
+  <label>Additional notes (optional)
+    <textarea name="additional_notes" rows="6" maxlength="10000"
+              placeholder="Paste anything you want the guide to cover...">{{ additional_notes or "" }}</textarea>
+  </label>
+  <div class="form-row">
+    <label>Depth
+      <select name="depth">
+        <option value="concise"{% if depth == "concise" %} selected{% endif %}>Concise</option>
+        <option value="standard"{% if depth == "standard" %} selected{% endif %}>Standard</option>
+        <option value="detailed"{% if depth == "detailed" %} selected{% endif %}>Detailed</option>
+      </select>
+    </label>
+  </div>
+  <button class="btn" type="submit"{% if not ai_enabled %} disabled{% endif %}>Generate study guide</button>
+</form>
+
+{% if result and result.enabled %}
+  {% if result.error %}
+  <p class="error">The AI request failed: {{ result.error }}</p>
+  {% elif result.guide %}
+  <h2>Study guide <span class="muted">({{ result.depth }})</span></h2>
+  <div class="notes-actions">
+    <button class="btn small" type="button" onclick="navigator.clipboard.writeText(document.getElementById('guide-output').innerText); this.textContent='Copied!';">Copy guide</button>
+    <button class="btn small" type="button" onclick="const b=new Blob([document.getElementById('guide-output').innerText],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='{{ download_name }}'; a.click();">Download .txt</button>
+  </div>
+  <pre id="guide-output" class="notes-output">{{ result.guide }}</pre>
+  {% endif %}
+{% endif %}
+{% endblock %}

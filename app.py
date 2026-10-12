@@ -229,5 +229,51 @@ def ai_plan(course_id):
         ai_plan=plan)
 
 
+def _safe_filename(name):
+    """Course name -> safe download filename stem."""
+    stem = "".join(c if c.isalnum() else "-" for c in name.strip().lower())
+    stem = "-".join(filter(None, stem.split("-")))
+    return (stem or "study-guide")[:60]
+
+
+@app.route("/courses/<int:course_id>/guide", methods=["GET", "POST"])
+def study_guide(course_id):
+    """AI study guide built from the course's topics plus optional notes."""
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return "Course not found", 404
+    topics = db.list_topics(DB_PATH, course_id)
+    valid_ids = {t["id"] for t in topics}
+
+    result, notes, depth = None, "", "standard"
+    selected_ids = set(valid_ids)  # default: all topics
+    if request.method == "POST":
+        raw_ids = request.form.getlist("topic_ids")
+        try:
+            selected_ids = {int(i) for i in raw_ids}
+        except (TypeError, ValueError):
+            selected_ids = set()
+        # reject unknown ids and ids from other courses
+        selected_ids &= valid_ids
+        notes = request.form.get("additional_notes", "")[:ai.MAX_NOTES_CHARS]
+        depth = request.form.get("depth", "standard")
+        if depth not in ai.GUIDE_DEPTHS:
+            depth = "standard"
+        chosen = [t for t in topics if t["id"] in selected_ids]
+        if not chosen and not notes.strip():
+            result = {"enabled": True, "error":
+                      "Select at least one topic or add some notes."}
+        else:
+            result = ai.generate_study_guide(
+                course["name"], chosen, notes or None, depth)
+
+    return render_template(
+        "guide.html", course=course, topics=topics,
+        selected_ids=selected_ids, additional_notes=notes, depth=depth,
+        ai_enabled=ai.is_enabled(), result=result,
+        download_name=f"{_safe_filename(course['name'])}-study-guide.txt",
+    )
+
+
 if __name__ == "__main__":
     app.run(debug=True)

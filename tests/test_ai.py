@@ -422,3 +422,202 @@ def test_flashcards_accepts_txt_upload(client, monkeypatch):
                        content_type="multipart/form-data")
     assert resp.status_code == 200
     assert "flipCard" in resp.get_data(as_text=True)
+
+
+# --- AI study guide generator ---
+
+def _guide_course(client):
+    """Course with two topics; returns (course_id, topic_ids)."""
+    cid = make_course(client)
+    from studygenie import db as dbm
+    import app as app_module
+    with dbm.connect(app_module.DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT id FROM topics WHERE course_id = ?", (cid,)).fetchall()
+    return cid, [r["id"] for r in rows]
+
+
+def test_guide_page_200_for_existing_course(client):
+    cid, _ = _guide_course(client)
+    resp = client.get(f"/courses/{cid}/guide")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Databases" in html  # course identified
+    assert "Joins" in html  # topics listed
+
+
+def test_guide_missing_course_404(client):
+    assert client.get("/courses/99999/guide").status_code == 404
+    assert client.post("/courses/99999/guide").status_code == 404
+
+
+def test_course_page_exposes_study_guide_action(client):
+    cid, _ = _guide_course(client)
+    html = client.get(f"/courses/{cid}").get_data(as_text=True)
+    assert f"/courses/{cid}/guide" in html
+    assert "Study guide" in html
+
+
+def test_guide_page_no_key_renders_disabled(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    cid, tids = _guide_course(client)
+    resp = client.get(f"/courses/{cid}/guide")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "GEMINI_API_KEY" in html
+    assert "disabled" in html
+
+
+def test_guide_no_key_never_calls_api(client, monkeypatch):
+    """Without a key, the real _model() returns None -> {"enabled": False}.
+
+    No generate_content call is possible because the function returns
+    before touching any model. Verified at the unit level (no patching).
+    """
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert ai.generate_study_guide("Math", [{"title": "T"}]) == {"enabled": False}
+    cid, tids = _guide_course(client)
+    resp = client.post(f"/courses/{cid}/guide",
+                       data={"topic_ids": [str(t) for t in tids]})
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "GEMINI_API_KEY" in html  # disabled explanation shown
+    assert "Copy guide" not in html  # no fabricated output
+
+
+def test_guide_empty_notes_accepted(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    seen = {}
+    monkeypatch.setattr(ai, "generate_study_guide",
+                        lambda name, topics, notes=None, depth="standard": (
+                            seen.update(notes=notes),
+                            {"enabled": True, "guide": "guide text",
+                             "course": name, "depth": depth})[1])
+    cid, tids = _guide_course(client)
+    resp = client.post(f"/courses/{cid}/guide",
+                       data={"topic_ids": [str(t) for t in tids],
+                             "additional_notes": ""})
+    assert resp.status_code == 200
+    assert seen["notes"] is None
+    assert "guide text" in resp.get_data(as_text=True)
+
+
+def test_guide_rejects_foreign_and_invalid_topic_ids(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    seen = {}
+    monkeypatch.setattr(ai, "generate_study_guide",
+                        lambda name, topics, notes=None, depth="standard": (
+                            seen.update(topics=[t["title"] for t in topics]),
+                            {"enabled": True, "guide": "g",
+                             "course": name, "depth": depth})[1])
+    cid, tids = _guide_course(client)
+    other_cid, other_tids = _guide_course(client)  # second course's topics
+    resp = client.post(f"/courses/{cid}/guide",
+                       data={"topic_ids": [str(other_tids[0]), "abc", "99999"]})
+    # foreign/invalid ids dropped; with no valid topics and no notes -> error
+    assert resp.status_code == 200
+    assert "Select at least one topic" in resp.get_data(as_text=True)
+    assert "generate_study_guide" not in str(seen) or not seen.get("topics")
+
+
+def test_guide_oversized_notes_truncated(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    seen = {}
+    monkeypatch.setattr(ai, "generate_study_guide",
+                        lambda name, topics, notes=None, depth="standard": (
+                            seen.update(notes=notes),
+                            {"enabled": True, "guide": "g",
+                             "course": name, "depth": depth})[1])
+    cid, tids = _guide_course(client)
+    big = "x" * (ai.MAX_NOTES_CHARS + 5000)
+    client.post(f"/courses/{cid}/guide",
+                data={"topic_ids": [str(t) for t in tids],
+                      "additional_notes": big})
+    assert len(seen["notes"]) == ai.MAX_NOTES_CHARS
+
+
+def test_guide_generation_inputs_reach_prompt(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    model = fake_model("## Title\nGuide body.")
+    monkeypatch.setattr(ai, "_model", lambda: model)
+    topics = [{"title": "SQL Joins", "difficulty": 5}]
+    result = ai.generate_study_guide(
+        "Databases", topics, "my own summary", "detailed")
+    assert result["enabled"] is True
+    assert result["depth"] == "detailed"
+    assert "Guide body" in result["guide"]
+    prompt = model.prompts[0]
+    assert "Databases" in prompt
+    assert "SQL Joins" in prompt
+    assert "my own summary" in prompt
+    assert "detailed" in prompt
+    # honesty constraints present
+    assert "NOT actual or predicted exam questions" in prompt
+    assert "Do not invent" in prompt
+
+
+def test_guide_invalid_depth_defaults_standard(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    model = fake_model("guide")
+    monkeypatch.setattr(ai, "_model", lambda: model)
+    result = ai.generate_study_guide("Math", [], None, "extreme")
+    assert result["depth"] == "standard"
+
+
+def test_guide_empty_ai_output_is_error(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "_model", lambda: fake_model("   "))
+    result = ai.generate_study_guide("Math", [{"title": "T"}])
+    assert result["enabled"] is True
+    assert "empty" in result["error"].lower()
+
+
+def test_guide_api_error_never_raises(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+
+    class Broken:
+        def generate_content(self, prompt):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(ai, "_model", lambda: Broken())
+    result = ai.generate_study_guide("Math", [{"title": "T"}])
+    assert result["enabled"] is True
+    assert "boom" in result["error"]
+
+
+def test_guide_error_state_preserves_inputs_no_fabrication(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "generate_study_guide", lambda *a, **k: {
+        "enabled": True, "error": "quota exceeded"})
+    cid, tids = _guide_course(client)
+    resp = client.post(f"/courses/{cid}/guide",
+                       data={"topic_ids": [str(t) for t in tids],
+                             "additional_notes": "keep me",
+                             "depth": "detailed"})
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "quota exceeded" in html
+    assert "keep me" in html  # inputs preserved
+    assert "Copy guide" not in html  # no copy/download without content
+
+
+def test_guide_success_shows_copy_download(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "generate_study_guide", lambda *a, **k: {
+        "enabled": True, "guide": "## Key concepts\nJoins combine rows.",
+        "course": "Databases", "depth": "standard"})
+    cid, tids = _guide_course(client)
+    resp = client.post(f"/courses/{cid}/guide",
+                       data={"topic_ids": [str(t) for t in tids]})
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "Joins combine rows" in html
+    assert "Copy guide" in html
+    assert "Download .txt" in html
+    assert "databases-study-guide.txt" in html  # course-based .txt filename
+
+
+def test_safe_filename():
+    import app as app_module
+    assert app_module._safe_filename("Databases 101!") == "databases-101"
+    assert app_module._safe_filename("  ") == "study-guide"

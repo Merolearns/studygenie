@@ -35,7 +35,8 @@
 
 <h2>AI practice</h2>
 <p class="meta">Practice quizzes and study tips, powered by Gemini (optional).</p>
-<p><a class="btn" href="{{ url_for('quiz', course_id=course.id) }}">Practice quiz</a></p>
+<p><a class="btn" href="{{ url_for('quiz', course_id=course.id) }}">Practice quiz</a>
+<a class="btn" href="{{ url_for('study_guide', course_id=course.id) }}">Study guide</a></p>
 
 <h2>AI weekly plan</h2>
 <p class="meta">A human-readable week plan written by Gemini from your topics.</p>
