@@ -107,16 +107,18 @@ def test_whitespace_padded_date_rejected(client):
     before = _course_count()
     resp = client.post("/courses/new",
                        data={"name": "Bad", "exam_date": " 2026-12-20 "})
-    # the route strips; a padded value that strips to a valid date is OK,
-    # but the stored value must be the exact format
-    html = resp.get_data(as_text=True)
-    if resp.status_code == 302:
-        assert db.get_course(
-            app_module.DB_PATH,
-            int(resp.headers["Location"].rsplit("/", 1)[-1])
-        )["exam_date"] == "2026-12-20"
-    else:
-        assert _course_count() == before
+    assert resp.status_code == 200
+    assert "valid exam date" in resp.get_data(as_text=True)
+    assert _course_count() == before
+
+
+def test_non_ascii_digits_rejected(client):
+    before = _course_count()
+    # Arabic-Indic digits: \\d would match, [0-9] must not
+    resp = client.post("/courses/new",
+                       data={"name": "Bad", "exam_date": "٢٠٢٦-١٢-٢٠"})
+    assert resp.status_code == 200
+    assert _course_count() == before
 
 
 def test_valid_exam_date_unit():
@@ -124,6 +126,8 @@ def test_valid_exam_date_unit():
     assert app_module._valid_exam_date("2026-02-30") is False
     assert app_module._valid_exam_date("20261220") is False
     assert app_module._valid_exam_date("2026-W51-1") is False
+    assert app_module._valid_exam_date(" 2026-12-20 ") is False
+    assert app_module._valid_exam_date("٢٠٢٦-١٢-٢٠") is False
     assert app_module._valid_exam_date("") is False
     assert app_module._valid_exam_date(None) is False
     assert app_module._valid_exam_date("12/20/2026") is False

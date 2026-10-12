@@ -77,29 +77,33 @@ def progress_page():
 def new_course():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
-        exam_date = request.form.get("exam_date", "").strip()
+        # exam_date is validated RAW: no stripping/normalizing before the
+        # format check, so whitespace-padded input is rejected, not fixed.
+        raw_date = request.form.get("exam_date", "")
         error = None
         if not name:
             error = "Please enter a course name."
-        elif not _valid_exam_date(exam_date):
+        elif not _valid_exam_date(raw_date):
             error = "Please enter a valid exam date (YYYY-MM-DD)."
         if error is None:
-            course_id = db.add_course(DB_PATH, name, exam_date)
+            course_id = db.add_course(DB_PATH, name, raw_date)
             return redirect(url_for("course_detail", course_id=course_id))
         return render_template("new_course.html", error=error,
-                               name=name, exam_date=exam_date)
+                               name=name, exam_date=raw_date)
     return render_template("new_course.html")
 
 
 def _valid_exam_date(value):
-    """Exactly YYYY-MM-DD and a real calendar date.
+    """Exactly YYYY-MM-DD with ASCII digits, and a real calendar date.
 
     date.fromisoformat() alone is too permissive (it accepts compact
-    '20261220' and week dates like '2026-W51-1'), so the shape is
-    enforced with a regex first.
+    '20261220' and week dates like '2026-W51-1'), and \\d matches Unicode
+    digits, so the shape is enforced with an ASCII-only regex first.
     """
     import re
-    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+    if not isinstance(value, str):
+        return False
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
         return False
     try:
         date.fromisoformat(value)
