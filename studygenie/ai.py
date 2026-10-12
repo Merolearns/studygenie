@@ -9,7 +9,7 @@ never from code or config files.
 import json
 import os
 
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-3.6-flash"  # stable per Google docs (Oct 2026); 1.5-flash retired
 API_KEY_ENV = "GEMINI_API_KEY"
 
 
