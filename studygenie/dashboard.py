@@ -45,7 +45,7 @@ def _enrich(rows, today):
     return out
 
 
-def _sessions_with_context(db_path):
+def _sessions_with_context(db_path, user_id):
     """All sessions joined to topics/courses, with review flags.
 
     A session is a review when the topic has an earlier session;
@@ -62,33 +62,34 @@ def _sessions_with_context(db_path):
             " FROM sessions s"
             " JOIN courses c ON s.course_id = c.id"
             " LEFT JOIN topics t ON s.topic_id = t.id"
-        ).fetchall()
+            " WHERE c.user_id = ?",
+            (user_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
-def up_next(db_path, today=None, limit=5):
+def up_next(db_path, user_id, today=None, limit=5):
     """Most urgent incomplete sessions, most urgent first."""
     today = _today(today)
-    rows = [r for r in _sessions_with_context(db_path) if not r["completed"]]
+    rows = [r for r in _sessions_with_context(db_path, user_id) if not r["completed"]]
     enriched = _enrich(rows, today)
     enriched.sort(key=lambda s: s["_sort"])
     return enriched[:limit]
 
 
-def overdue(db_path, today=None):
+def overdue(db_path, user_id, today=None):
     """Incomplete sessions planned before today, most overdue first."""
     today = _today(today)
     iso = today.isoformat()
-    rows = [r for r in _sessions_with_context(db_path)
+    rows = [r for r in _sessions_with_context(db_path, user_id)
             if not r["completed"] and r["planned_date"] < iso]
     enriched = _enrich(rows, today)
     enriched.sort(key=lambda s: s["planned_date"])
     return enriched
 
 
-def recently_completed(db_path, limit=5):
+def recently_completed(db_path, user_id, limit=5):
     """Completed sessions, most recently planned first."""
-    rows = [r for r in _sessions_with_context(db_path) if r["completed"]]
+    rows = [r for r in _sessions_with_context(db_path, user_id) if r["completed"]]
     rows.sort(key=lambda r: r["planned_date"], reverse=True)
     return [{
         "course_name": r["course_name"],
@@ -98,11 +99,11 @@ def recently_completed(db_path, limit=5):
     } for r in rows[:limit]]
 
 
-def upcoming_exams(db_path, today=None):
+def upcoming_exams(db_path, user_id, today=None):
     """Courses with exams today or later, soonest first."""
     today = _today(today)
     exams = []
-    for c in db.list_courses(db_path):
+    for c in db.list_courses(db_path, user_id):
         try:
             exam = date.fromisoformat(c["exam_date"])
         except ValueError:

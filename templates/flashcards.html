@@ -13,6 +13,7 @@
 {% endif %}
 
 <form method="post" class="form" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Study material
     <textarea name="document_content" rows="8" placeholder="Paste notes or a topic summary (at least 50 characters)..." required>{{ document_content or "" }}</textarea>
   </label>

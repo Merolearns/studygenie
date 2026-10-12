@@ -6,6 +6,7 @@
 these budgets when you tick "use my availability". Days set to 0 are skipped.</p>
 
 <form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% for d in days %}
   <label>{{ d.name }}
     <input type="number" name="day_{{ d.weekday }}" min="0" max="480"

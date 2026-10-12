@@ -1,13 +1,75 @@
-"""StudyGenie web app — Flask + SQLite study planner."""
+"""StudyGenie web app — Flask + SQLite study planner.
+
+Multi-user hosted app: accounts with per-user data isolation, CSRF
+protection, and graceful no-key AI behavior. Secrets come from the
+environment, never from code.
+"""
 import os
+import secrets as _secrets_mod
 from datetime import date, timedelta
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, \
+    jsonify, send_file, abort
+from flask_login import LoginManager, UserMixin, login_user, logout_user, \
+    login_required, current_user
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from studygenie import db, scheduler, progress, ai, dashboard
 
 DB_PATH = os.environ.get("STUDYGENIE_DB", "studygenie.db")
 
 app = Flask(__name__)
+
+# Secret key: from the environment in production; a random ephemeral key
+# for local development (sessions/CSRF won't survive restarts then).
+app.secret_key = os.environ.get("SECRET_KEY")
+if not app.secret_key:
+    app.secret_key = _secrets_mod.token_hex(32)
+    print("WARNING: SECRET_KEY not set — using an ephemeral key."
+          " Set SECRET_KEY in production.")
+
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Please log in to use StudyGenie."
+
+csrf = CSRFProtect(app)
+
+
+class User(UserMixin):
+    def __init__(self, row):
+        self.id = row["id"]
+        self.email = row["email"]
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    row = db.get_user(DB_PATH, int(user_id))
+    return User(row) if row else None
+
+
+@app.errorhandler(CSRFError)
+def _csrf_error(error):
+    return ("Security check failed. Please go back and try again.", 400)
+
+
+# Simple login rate limiting: 5 failures -> 15 min lockout per email+IP.
+_LOGIN_ATTEMPTS = {}
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_LOCKOUT_SECONDS = 15 * 60
+
+
+def _login_allowed(email, ip):
+    import time
+    key = (email.lower(), ip)
+    attempts = [t for t in _LOGIN_ATTEMPTS.get(key, [])
+                if time.time() - t < LOGIN_LOCKOUT_SECONDS]
+    _LOGIN_ATTEMPTS[key] = attempts
+    return len(attempts) < MAX_LOGIN_ATTEMPTS
+
+
+def _record_login_failure(email, ip):
+    import time
+    _LOGIN_ATTEMPTS.setdefault((email.lower(), ip), []).append(time.time())
 
 # Byte-size vs character-count limits (not interchangeable):
 # - MAX_CONTENT_LENGTH caps the whole request body in BYTES, enforced by
@@ -48,39 +110,140 @@ def _read_document_content():
 def _ensure_db():
     if not os.path.exists(DB_PATH):
         db.init_db(DB_PATH)
+    db.migrate(DB_PATH)
+
+
+# --- authentication ---
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        if "@" not in email or "." not in email.split("@")[-1]:
+            error = "Please enter a valid email address."
+        elif len(password) < 8:
+            error = "Password must be at least 8 characters."
+        elif db.get_user_by_email(DB_PATH, email) is not None:
+            error = "An account with that email already exists."
+        else:
+            try:
+                user_id = db.add_user(
+                    DB_PATH, email, generate_password_hash(password))
+            except Exception:
+                error = "An account with that email already exists."
+            else:
+                # first account adopts any pre-account local data
+                if db.orphan_course_count(DB_PATH):
+                    db.adopt_orphans(DB_PATH, user_id)
+                login_user(User(db.get_user(DB_PATH, user_id)))
+                return redirect(url_for("index"))
+    return render_template("register.html", error=error,
+                           notice=request.args.get("notice"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        ip = request.remote_addr or "unknown"
+        if not _login_allowed(email, ip):
+            error = ("Too many failed attempts. Please wait 15 minutes"
+                     " and try again.")
+        else:
+            row = db.get_user_by_email(DB_PATH, email)
+            if row and check_password_hash(row["password_hash"], password):
+                login_user(User(row))
+                return redirect(request.args.get("next") or url_for("index"))
+            _record_login_failure(email, ip)
+            error = "Invalid email or password."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout", methods=["POST"])
+@login_required
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
+
+@app.route("/account")
+@login_required
+def account():
+    return render_template("account.html", email=current_user.email)
+
+
+@app.route("/account/export")
+@login_required
+def export_data():
+    """Download all of the user's data as JSON."""
+    import io, json
+    data = db.export_user_data(DB_PATH, _uid())
+    buf = io.BytesIO(json.dumps(data, indent=2).encode("utf-8"))
+    return send_file(buf, mimetype="application/json", as_attachment=True,
+                     download_name="studygenie-export.json")
+
+
+@app.route("/account/delete", methods=["GET", "POST"])
+@login_required
+def delete_account():
+    """Delete the account and all its data, after explicit confirmation."""
+    if request.method == "POST":
+        if request.form.get("confirm") == "yes":
+            db.delete_user(DB_PATH, _uid())
+            logout_user()
+            return redirect(url_for("register",
+                                    notice="account-deleted"))
+        return redirect(url_for("account"))
+    return render_template("account_delete.html", email=current_user.email)
+
+
+def _uid():
+    return int(current_user.id)
 
 
 @app.route("/")
+@login_required
 def index():
-    courses = db.list_courses(DB_PATH)
-    by_id = {p["id"]: p for p in progress.course_progress(DB_PATH)}
+    courses = db.list_courses(DB_PATH, _uid())
+    by_id = {p["id"]: p for p in progress.course_progress(DB_PATH, _uid())}
     for c in courses:
         c["progress_pct"] = by_id.get(c["id"], {}).get("pct")
     return render_template(
         "index.html", courses=courses,
         notice=request.args.get("notice"),
-        up_next=dashboard.up_next(DB_PATH),
-        overdue=dashboard.overdue(DB_PATH),
-        recent=dashboard.recently_completed(DB_PATH),
-        exams=dashboard.upcoming_exams(DB_PATH),
-        streak=progress.streak(DB_PATH))
+        up_next=dashboard.up_next(DB_PATH, _uid()),
+        overdue=dashboard.overdue(DB_PATH, _uid()),
+        recent=dashboard.recently_completed(DB_PATH, _uid()),
+        exams=dashboard.upcoming_exams(DB_PATH, _uid()),
+        streak=progress.streak(DB_PATH, _uid()))
 
 
 @app.route("/progress")
+@login_required
 def progress_page():
-    pct, done, total = progress.weekly_completion(DB_PATH)
+    pct, done, total = progress.weekly_completion(DB_PATH, _uid())
     return render_template(
         "progress.html",
-        streak=progress.streak(DB_PATH),
+        streak=progress.streak(DB_PATH, _uid()),
         weekly_pct=pct,
         weekly_done=done,
         weekly_total=total,
-        total_minutes=progress.total_minutes(DB_PATH),
-        chart=progress.minutes_by_day(DB_PATH),
+        total_minutes=progress.total_minutes(DB_PATH, _uid()),
+        chart=progress.minutes_by_day(DB_PATH, _uid()),
     )
 
 
 @app.route("/courses/new", methods=["GET", "POST"])
+@login_required
 def new_course():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
@@ -93,7 +256,7 @@ def new_course():
         elif not _valid_exam_date(raw_date):
             error = "Please enter a valid exam date (YYYY-MM-DD)."
         if error is None:
-            course_id = db.add_course(DB_PATH, name, raw_date)
+            course_id = db.add_course(DB_PATH, _uid(), name, raw_date)
             return redirect(url_for("course_detail", course_id=course_id))
         return render_template("new_course.html", error=error,
                                name=name, exam_date=raw_date)
@@ -120,12 +283,13 @@ def _valid_exam_date(value):
 
 
 @app.route("/courses/<int:course_id>")
+@login_required
 def course_detail(course_id):
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
-    topics = db.list_topics(DB_PATH, course_id)
-    sessions = db.list_sessions(DB_PATH, course_id)
+    topics = db.list_topics(DB_PATH, course_id, _uid())
+    sessions = db.list_sessions(DB_PATH, course_id, _uid())
     return render_template(
         "course_detail.html", course=course, topics=topics,
         session_count=len(sessions), ai_enabled=ai.is_enabled(),
@@ -133,8 +297,9 @@ def course_detail(course_id):
 
 
 @app.route("/courses/<int:course_id>/edit", methods=["GET", "POST"])
+@login_required
 def edit_course(course_id):
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
     if request.method == "POST":
@@ -146,7 +311,7 @@ def edit_course(course_id):
         elif not _valid_exam_date(raw_date):
             error = "Please enter a valid exam date (YYYY-MM-DD)."
         if error is None:
-            db.update_course(DB_PATH, course_id, name, raw_date)
+            db.update_course(DB_PATH, course_id, _uid(), name, raw_date)
             return redirect(url_for("course_detail", course_id=course_id,
                                     notice="course-updated"))
         return render_template("edit_course.html", course=course, error=error,
@@ -155,26 +320,27 @@ def edit_course(course_id):
 
 
 @app.route("/courses/<int:course_id>/delete", methods=["GET", "POST"])
+@login_required
 def delete_course(course_id):
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
     if request.method == "POST":
         if request.form.get("confirm") == "yes":
-            db.delete_course(DB_PATH, course_id)
+            db.delete_course(DB_PATH, course_id, _uid())
             return redirect(url_for("index", notice="course-deleted"))
         return redirect(url_for("course_detail", course_id=course_id))
-    preview = db.course_delete_preview(DB_PATH, course_id)
+    preview = db.course_delete_preview(DB_PATH, course_id, _uid())
     return render_template("delete_course.html", course=course,
                            preview=preview)
 
 
 def _get_course_topic_or_404(course_id, topic_id):
     """Topic belonging to the course, else None (covers missing course)."""
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return None, None
-    topic = db.get_topic(DB_PATH, topic_id)
+    topic = db.get_topic(DB_PATH, topic_id, _uid())
     if topic is None or topic["course_id"] != course_id:
         return course, None
     return course, topic
@@ -182,6 +348,7 @@ def _get_course_topic_or_404(course_id, topic_id):
 
 @app.route("/courses/<int:course_id>/topics/<int:topic_id>/edit",
            methods=["GET", "POST"])
+@login_required
 def edit_topic(course_id, topic_id):
     course, topic = _get_course_topic_or_404(course_id, topic_id)
     if course is None or topic is None:
@@ -198,7 +365,7 @@ def edit_topic(course_id, topic_id):
         elif not 1 <= difficulty <= 5:
             error = "Difficulty must be between 1 and 5."
         if error is None:
-            db.update_topic(DB_PATH, topic_id, title, difficulty)
+            db.update_topic(DB_PATH, topic_id, _uid(), title, difficulty)
             return redirect(url_for("course_detail", course_id=course_id,
                                     notice="topic-updated"))
         return render_template("edit_topic.html", course=course, topic=topic,
@@ -208,41 +375,44 @@ def edit_topic(course_id, topic_id):
 
 @app.route("/courses/<int:course_id>/topics/<int:topic_id>/delete",
            methods=["GET", "POST"])
+@login_required
 def delete_topic(course_id, topic_id):
     course, topic = _get_course_topic_or_404(course_id, topic_id)
     if course is None or topic is None:
         return "Topic not found", 404
     if request.method == "POST":
         if request.form.get("confirm") == "yes":
-            db.delete_topic(DB_PATH, topic_id)
+            db.delete_topic(DB_PATH, topic_id, _uid())
             return redirect(url_for("course_detail", course_id=course_id,
                                     notice="topic-deleted"))
         return redirect(url_for("course_detail", course_id=course_id))
-    session_count = db.count_topic_sessions(DB_PATH, topic_id)
+    session_count = db.count_topic_sessions(DB_PATH, topic_id, _uid())
     return render_template("delete_topic.html", course=course, topic=topic,
                            session_count=session_count)
 
 
 @app.route("/courses/<int:course_id>/topics", methods=["POST"])
+@login_required
 def add_topic(course_id):
-    if db.get_course(DB_PATH, course_id) is None:
+    if db.get_course(DB_PATH, course_id, _uid()) is None:
         return "Course not found", 404
     title = request.form.get("title", "").strip()
     difficulty = request.form.get("difficulty", 3)
     if title:
-        db.add_topic(DB_PATH, course_id, title, difficulty)
+        db.add_topic(DB_PATH, course_id, _uid(), title, difficulty)
     return redirect(url_for("course_detail", course_id=course_id))
 
 
 @app.route("/courses/<int:course_id>/plan", methods=["POST"])
+@login_required
 def generate_plan(course_id):
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
     minutes = request.form.get("minutes_per_day", 60, type=int)
     use_avail = request.form.get("use_availability") == "1"
     try:
-        plan = scheduler.generate_plan(DB_PATH, course_id,
+        plan = scheduler.generate_plan(DB_PATH, course_id, _uid(),
                                        minutes_per_day=minutes,
                                        use_availability=use_avail)
     except ValueError:
@@ -250,15 +420,16 @@ def generate_plan(course_id):
         # (possible only in databases predating input validation)
         return ("This course has an invalid exam date and cannot be "
                 "scheduled.", 400)
-    scheduler.save_plan(DB_PATH, course_id, plan)
+    scheduler.save_plan(DB_PATH, course_id, _uid(), plan)
     return redirect(url_for("course_detail", course_id=course_id))
 
 
 @app.route("/plan")
+@login_required
 def plan():
     """Seven-day view of planned sessions, today highlighted."""
     today = date.today()
-    sessions = db.list_sessions_for_week(DB_PATH, today.isoformat())
+    sessions = db.list_sessions_for_week(DB_PATH, _uid(), today.isoformat())
     by_day = {}
     for s in sessions:
         by_day.setdefault(s["planned_date"], []).append(s)
@@ -276,12 +447,13 @@ def plan():
 
 
 @app.route("/courses/<int:course_id>/quiz", methods=["GET", "POST"])
+@login_required
 def quiz(course_id):
     """Optional AI practice: pick a topic, get a quiz, reveal answers."""
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
-    topics = db.list_topics(DB_PATH, course_id)
+    topics = db.list_topics(DB_PATH, course_id, _uid())
     quiz_data, tips, quiz_error = None, None, None
     if request.method == "POST":
         if request.form.get("action") == "tips":
@@ -303,12 +475,14 @@ def quiz(course_id):
 
 
 @app.route("/sessions/<int:session_id>/done", methods=["POST"])
+@login_required
 def toggle_done(session_id):
-    db.toggle_session(DB_PATH, session_id)
+    db.toggle_session(DB_PATH, session_id, _uid())
     return redirect(request.referrer or url_for("plan"))
 
 
 @app.route("/notes", methods=["GET", "POST"])
+@login_required
 def notes():
     """AI study notes: paste material, pick a style, get structured notes."""
     result, doc, style, focus = None, "", "comprehensive", ""
@@ -328,6 +502,7 @@ def notes():
 
 
 @app.route("/flashcards", methods=["GET", "POST"])
+@login_required
 def flashcards():
     """AI flashcards: paste material, flip through generated cards."""
     result, doc, count = None, "", 8
@@ -350,6 +525,7 @@ WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday",
 
 
 @app.route("/availability", methods=["GET", "POST"])
+@login_required
 def availability():
     """Set per-weekday study minutes used by the scheduler."""
     saved = False
@@ -361,24 +537,25 @@ def availability():
                 minutes[wd] = max(0, int(raw))
             except (TypeError, ValueError):
                 minutes[wd] = db.DEFAULT_MINUTES
-        db.set_availability(DB_PATH, minutes)
+        db.set_availability(DB_PATH, _uid(), minutes)
         saved = True
     return render_template(
         "availability.html",
         days=[{"weekday": i, "name": n} for i, n in enumerate(WEEKDAYS)],
-        availability=db.get_availability(DB_PATH),
+        availability=db.get_availability(DB_PATH, _uid()),
         saved=saved,
     )
 
 
 @app.route("/courses/<int:course_id>/ai-plan", methods=["POST"])
+@login_required
 def ai_plan(course_id):
     """AI-written weekly plan for a course (complements the scheduler)."""
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
-    topics = db.list_topics(DB_PATH, course_id)
-    sessions = db.list_sessions(DB_PATH, course_id)
+    topics = db.list_topics(DB_PATH, course_id, _uid())
+    sessions = db.list_sessions(DB_PATH, course_id, _uid())
     plan = ai.generate_weekly_plan(
         course["name"], topics, course.get("exam_date"))
     return render_template(
@@ -455,31 +632,33 @@ def _practice_questions(topics, length):
 def _get_session_or_404(token):
     _prune_sessions()
     sess = SESSIONS.get(token)
-    if sess is None:
+    if sess is None or sess.get("user_id") != _uid():
         return None
     sess["last_active"] = _now()  # active use keeps the session alive
     return sess
 
 
 @app.route("/courses/<int:course_id>/session", methods=["GET"])
+@login_required
 def session_setup(course_id):
     """Study session setup: topics, length, AI Coach vs Practice Mode."""
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
-    topics = db.list_topics(DB_PATH, course_id)
+    topics = db.list_topics(DB_PATH, course_id, _uid())
     return render_template(
         "session_setup.html", course=course, topics=topics,
         ai_enabled=ai.is_enabled(), lengths=SESSION_LENGTHS)
 
 
 @app.route("/courses/<int:course_id>/session/start", methods=["POST"])
+@login_required
 def session_start(course_id):
     """Validate setup choices and create the session."""
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
-    topics = db.list_topics(DB_PATH, course_id)
+    topics = db.list_topics(DB_PATH, course_id, _uid())
     valid_ids = {t["id"] for t in topics}
     try:
         chosen_ids = {int(i) for i in request.form.getlist("topic_ids")}
@@ -519,6 +698,7 @@ def session_start(course_id):
 
     token = _secrets.token_urlsafe(16)
     SESSIONS[token] = {
+        "user_id": _uid(),
         "course_id": course_id, "course_name": course["name"],
         "topics": [{"title": t["title"]} for t in chosen],
         "mode": mode, "length": length,
@@ -534,6 +714,7 @@ def session_start(course_id):
 
 
 @app.route("/session/<token>", methods=["GET"])
+@login_required
 def study_session(token):
     """Current question (or final review when finished)."""
     sess = _get_session_or_404(token)
@@ -544,6 +725,7 @@ def study_session(token):
 
 
 @app.route("/session/<token>/answer", methods=["POST"])
+@login_required
 def session_answer(token):
     """Submit an answer; AI mode evaluates, practice mode acknowledges."""
     sess = _get_session_or_404(token)
@@ -601,6 +783,7 @@ def session_answer(token):
 
 
 @app.route("/session/<token>/finish", methods=["POST"])
+@login_required
 def session_finish(token):
     """End the session early; review shows completed interactions."""
     sess = _get_session_or_404(token)
@@ -620,12 +803,13 @@ def _feedback_text(feedback):
 
 
 @app.route("/courses/<int:course_id>/guide", methods=["GET", "POST"])
+@login_required
 def study_guide(course_id):
     """AI study guide built from the course's topics plus optional notes."""
-    course = db.get_course(DB_PATH, course_id)
+    course = db.get_course(DB_PATH, course_id, _uid())
     if course is None:
         return "Course not found", 404
-    topics = db.list_topics(DB_PATH, course_id)
+    topics = db.list_topics(DB_PATH, course_id, _uid())
     valid_ids = {t["id"] for t in topics}
 
     result, notes, depth = None, "", "standard"

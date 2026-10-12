@@ -6,6 +6,7 @@
 <p class="error">{{ error }}</p>
 {% endif %}
 <form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Topic
     <input name="title" required maxlength="120" value="{{ title if title is defined else topic.title }}">
   </label>

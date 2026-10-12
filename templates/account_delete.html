@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Delete account — StudyGenie{% endblock %}
+{% block content %}
+<h1>Delete your account?</h1>
+<div class="ai-note">
+  <p>&#9888; This is permanent. Deleting your account removes your courses,
+  topics, study sessions, progress history, and availability. This cannot
+  be undone. Consider downloading your data first.</p>
+</div>
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="notes-actions">
+    <button class="btn danger" type="submit" name="confirm" value="yes">Yes, delete my account</button>
+    <a class="btn small" href="{{ url_for('account') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

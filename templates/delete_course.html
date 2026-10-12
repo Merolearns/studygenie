@@ -12,6 +12,7 @@
   <p>Your other courses are not affected.</p>
 </div>
 <form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="notes-actions">
     <button class="btn danger" type="submit" name="confirm" value="yes">Yes, delete everything</button>
     <a class="btn small" href="{{ url_for('course_detail', course_id=course.id) }}">Cancel</a>

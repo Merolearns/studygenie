@@ -137,3 +137,8 @@ legend { padding: 0 .5rem; color: #9aa4bb; }
   border-radius: 4px; padding: .1rem .4rem; margin-left: .4rem;
 }
 .inline-form { display: inline; margin: 0; }
+.btn-link {
+  background: none; border: none; cursor: pointer; font-size: 1em;
+  font-family: inherit; padding: 0;
+}
+.btn-link:hover { text-decoration: underline; }

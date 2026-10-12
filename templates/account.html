@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Account — StudyGenie{% endblock %}
+{% block content %}
+<h1>Account</h1>
+<p class="meta">Signed in as <strong>{{ email }}</strong>.</p>
+<h2>Your data</h2>
+<p>StudyGenie stores your courses, topics, study sessions, and availability
+in its database. AI features use Google Gemini only when you provide a key;
+generated content is never stored.</p>
+<p>
+  <a class="btn small" href="{{ url_for('export_data') }}">Download my data (JSON)</a>
+</p>
+<h2>Delete account</h2>
+<p class="meta">Permanently delete your account and all associated data.</p>
+<p><a class="btn small danger" href="{{ url_for('delete_account') }}">Delete my account…</a></p>
+{% endblock %}

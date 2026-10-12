@@ -62,8 +62,8 @@ def _parse(value):
     return date.fromisoformat(value)
 
 
-def generate_plan(db_path, course_id, minutes_per_day=60, start_date=None,
-                  use_availability=False):
+def generate_plan(db_path, course_id, user_id, minutes_per_day=60,
+                  start_date=None, use_availability=False):
     """Build a study plan for a course.
 
     Returns a list of dicts: {date, topic_id, topic_title, minutes}.
@@ -73,13 +73,13 @@ def generate_plan(db_path, course_id, minutes_per_day=60, start_date=None,
     flat minutes_per_day.
     """
     start = _parse(start_date) if start_date else date.today()
-    course = db.get_course(db_path, course_id)
+    course = db.get_course(db_path, course_id, user_id)
     exam = _parse(course["exam_date"])
-    topics = db.list_topics(db_path, course_id)
+    topics = db.list_topics(db_path, course_id, user_id)
 
     def budget(day):
         if use_availability:
-            return db.minutes_for(db_path, day)
+            return db.minutes_for(db_path, user_id, day)
         return minutes_per_day
 
     # hardest/most urgent topics first
@@ -140,9 +140,10 @@ def generate_plan(db_path, course_id, minutes_per_day=60, start_date=None,
     return plan
 
 
-def save_plan(db_path, course_id, plan):
+def save_plan(db_path, course_id, user_id, plan):
     """Store a plan, replacing the course's unstarted sessions."""
-    db.clear_pending_sessions(db_path, course_id)
+    db.clear_pending_sessions(db_path, course_id, user_id)
     for s in plan:
-        db.add_session(db_path, course_id, s["topic_id"], s["date"], s["minutes"])
+        db.add_session(db_path, course_id, user_id,
+                       s["topic_id"], s["date"], s["minutes"])
     return len(plan)
