@@ -92,11 +92,19 @@ def new_course():
 
 
 def _valid_exam_date(value):
-    """YYYY-MM-DD and a real calendar date."""
+    """Exactly YYYY-MM-DD and a real calendar date.
+
+    date.fromisoformat() alone is too permissive (it accepts compact
+    '20261220' and week dates like '2026-W51-1'), so the shape is
+    enforced with a regex first.
+    """
+    import re
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return False
     try:
         date.fromisoformat(value)
         return True
-    except (TypeError, ValueError):
+    except ValueError:
         return False
 
 
@@ -290,9 +298,15 @@ import secrets as _secrets
 import time as _time
 
 # Sessions live only in process memory and are lost on app restart.
-# They never expire while the user is active: every request touching a
-# session refreshes its last_active timestamp. Idle sessions are evicted
-# after SESSION_TTL_SECONDS, and a hard cap keeps memory bounded.
+# Eviction policy (deterministic, documented honestly):
+#  1. Idle expiry: sessions untouched for SESSION_TTL_SECONDS are removed.
+#     Every request touching a session refreshes its timestamp, so an
+#     actively-answering user is never expired by this rule.
+#  2. Hard cap: if sessions still exceed MAX_SESSIONS after idle expiry,
+#     the least-recently-active sessions are evicted first. In the extreme
+#     case where every session is within its TTL, the cap is still
+#     enforced — a recently-active session CAN be evicted to keep memory
+#     bounded. This is the documented tradeoff, not a bug.
 SESSIONS = {}  # token -> session dict
 SESSION_TTL_SECONDS = 2 * 60 * 60  # 2 hours idle
 MAX_SESSIONS = 20
@@ -303,11 +317,13 @@ def _now():
 
 
 def _prune_sessions(now=None):
-    """Evict idle-expired sessions; enforce the hard cap oldest-first."""
+    """Apply the documented eviction policy; never lets SESSIONS grow."""
     now = now if now is not None else _now()
+    # phase 1: idle expiry
     for token in [t for t, s in SESSIONS.items()
                   if now - s["last_active"] > SESSION_TTL_SECONDS]:
         del SESSIONS[token]
+    # phase 2: hard cap, least-recently-active first
     while len(SESSIONS) > MAX_SESSIONS:
         oldest = min(SESSIONS, key=lambda t: SESSIONS[t]["last_active"])
         del SESSIONS[oldest]

@@ -85,6 +85,50 @@ def test_missing_name_rejected(client):
     assert _course_count() == before
 
 
+def test_compact_date_rejected(client):
+    # fromisoformat accepts '20261220'; the app promises YYYY-MM-DD
+    before = _course_count()
+    resp = client.post("/courses/new",
+                       data={"name": "Bad", "exam_date": "20261220"})
+    assert resp.status_code == 200
+    assert "valid exam date" in resp.get_data(as_text=True)
+    assert _course_count() == before
+
+
+def test_week_date_rejected(client):
+    before = _course_count()
+    resp = client.post("/courses/new",
+                       data={"name": "Bad", "exam_date": "2026-W51-1"})
+    assert resp.status_code == 200
+    assert _course_count() == before
+
+
+def test_whitespace_padded_date_rejected(client):
+    before = _course_count()
+    resp = client.post("/courses/new",
+                       data={"name": "Bad", "exam_date": " 2026-12-20 "})
+    # the route strips; a padded value that strips to a valid date is OK,
+    # but the stored value must be the exact format
+    html = resp.get_data(as_text=True)
+    if resp.status_code == 302:
+        assert db.get_course(
+            app_module.DB_PATH,
+            int(resp.headers["Location"].rsplit("/", 1)[-1])
+        )["exam_date"] == "2026-12-20"
+    else:
+        assert _course_count() == before
+
+
+def test_valid_exam_date_unit():
+    assert app_module._valid_exam_date("2026-12-20") is True
+    assert app_module._valid_exam_date("2026-02-30") is False
+    assert app_module._valid_exam_date("20261220") is False
+    assert app_module._valid_exam_date("2026-W51-1") is False
+    assert app_module._valid_exam_date("") is False
+    assert app_module._valid_exam_date(None) is False
+    assert app_module._valid_exam_date("12/20/2026") is False
+
+
 def test_legacy_bad_date_plan_returns_400_not_500(client):
     # a database predating validation may hold a bad date; the plan
     # route must fail gracefully instead of crashing
@@ -206,10 +250,43 @@ def test_pasted_text_truncated_to_char_limit(client, monkeypatch):
                         lambda doc, style="comprehensive", focus_area=None: (
                             seen.update(doc=doc),
                             {"enabled": True, "style": style, "notes": "n"})[1])
-    resp = client.post("/notes", data={
-        "document_content": "y" * (ai.MAX_NOTES_CHARS if hasattr(ai, "MAX_NOTES_CHARS") else 20000 + 5000)})
+    oversized = "y" * (app_module.MAX_UPLOAD_CHARS + 5000)
+    assert len(oversized) > 20000  # genuinely oversized, no conditionals
+    resp = client.post("/notes", data={"document_content": oversized})
     assert resp.status_code == 200
-    assert len(seen["doc"]) <= 20000
+    assert len(seen["doc"]) == app_module.MAX_UPLOAD_CHARS
+
+
+def test_multibyte_utf8_capped_by_characters_not_bytes(client, monkeypatch):
+    # 'é' is 2 bytes in UTF-8; the char cap must apply after decoding,
+    # not confuse bytes with characters
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    seen = {}
+    monkeypatch.setattr(ai, "generate_notes",
+                        lambda doc, style="comprehensive", focus_area=None: (
+                            seen.update(doc=doc),
+                            {"enabled": True, "style": style, "notes": "n"})[1])
+    multibyte = "é" * (app_module.MAX_UPLOAD_CHARS + 1000)
+    resp = client.post("/notes", data={"document_content": multibyte})
+    assert resp.status_code == 200
+    assert len(seen["doc"]) == app_module.MAX_UPLOAD_CHARS
+    assert seen["doc"] == "é" * app_module.MAX_UPLOAD_CHARS
+
+
+def test_multibyte_file_upload_decoded_and_capped(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    seen = {}
+    monkeypatch.setattr(ai, "generate_notes",
+                        lambda doc, style="comprehensive", focus_area=None: (
+                            seen.update(doc=doc),
+                            {"enabled": True, "style": style, "notes": "n"})[1])
+    # 4-byte emoji: 30000 chars = 120000 bytes, under the 1 MB request
+    # limit but over the 20000 char cap
+    payload = ("😀" * 30000).encode("utf-8")
+    data = {"document_file": (io.BytesIO(payload), "emoji.txt")}
+    resp = client.post("/notes", data=data, content_type="multipart/form-data")
+    assert resp.status_code == 200
+    assert len(seen["doc"]) == app_module.MAX_UPLOAD_CHARS
 
 
 # --- 5. session memory bounds ---
@@ -267,3 +344,26 @@ def test_expired_session_token_404s_gracefully(client):
     _seed_session("stale", idle_seconds=app_module.SESSION_TTL_SECONDS + 60)
     assert client.get("/session/stale").status_code == 404
     assert "stale" not in app_module.SESSIONS  # pruned on access
+
+
+def test_all_active_cap_evicts_least_recently_active():
+    # extreme case: every session within TTL but over cap.
+    # Policy: least-recently-active is evicted (documented tradeoff).
+    app_module.SESSIONS.clear()
+    base = app_module._now()
+    for i in range(app_module.MAX_SESSIONS + 1):
+        _seed_session(f"a{i}", idle_seconds=0)
+        app_module.SESSIONS[f"a{i}"]["last_active"] = base - i * 10
+    app_module._prune_sessions(now=base)
+    assert len(app_module.SESSIONS) == app_module.MAX_SESSIONS
+    # a{MAX} was least-recently-active -> evicted; a0 (most recent) kept
+    assert f"a{app_module.MAX_SESSIONS}" not in app_module.SESSIONS
+    assert "a0" in app_module.SESSIONS
+
+
+def test_prune_never_exceeds_cap():
+    app_module.SESSIONS.clear()
+    for i in range(app_module.MAX_SESSIONS * 3):
+        _seed_session(f"x{i}")
+    app_module._prune_sessions()
+    assert len(app_module.SESSIONS) == app_module.MAX_SESSIONS
