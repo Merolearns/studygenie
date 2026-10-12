@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Practice quiz — {{ course.name }} — StudyGenie{% endblock %}
+{% block content %}
+<h1>AI practice: {{ course.name }}</h1>
+
+{% if not ai_enabled %}
+<div class="ai-note">
+  <p>&#129302; AI features are off. To enable quizzes and study tips, set the
+  <code>GEMINI_API_KEY</code> environment variable to a free API key from
+  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+  and restart the app.</p>
+</div>
+{% endif %}
+
+<h2>Quiz me</h2>
+{% if topics %}
+<form method="post" class="form">
+  <label>Topic
+    <select name="topic">
+      {% for t in topics %}<option>{{ t.title }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="btn" type="submit" name="action" value="quiz"{% if not ai_enabled %} disabled{% endif %}>Generate quiz</button>
+</form>
+{% else %}
+<p class="empty">Add some topics to the course first, then come back for a quiz.</p>
+{% endif %}
+
+{% if quiz and quiz.enabled %}
+  {% if quiz.error %}
+  <p class="error">The AI request failed: {{ quiz.error }}</p>
+  {% elif quiz.questions %}
+  <h2>Quiz: {{ quiz.topic }}</h2>
+  <ol class="quiz">
+    {% for q in quiz.questions %}
+    <li>
+      <p class="q">{{ q.question }}</p>
+      <ul class="choices">
+        {% for c in q.choices %}<li>{{ c }}</li>{% endfor %}
+      </ul>
+      <button class="btn small reveal" type="button"
+        onclick="this.nextElementSibling.hidden = !this.nextElementSibling.hidden; this.textContent = this.nextElementSibling.hidden ? 'Reveal answer' : 'Hide answer';">Reveal answer</button>
+      <p class="answer" hidden><strong>Answer:</strong> {{ q.answer }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+{% endif %}
+
+<h2>Study tips</h2>
+<form method="post" class="form">
+  <button class="btn" type="submit" name="action" value="tips"{% if not ai_enabled %} disabled{% endif %}>Get 3 AI study tips</button>
+</form>
+{% if tips and tips.enabled %}
+  {% if tips.error %}
+  <p class="error">The AI request failed: {{ tips.error }}</p>
+  {% elif tips.tips %}
+  <ul class="tips">
+    {% for tip in tips.tips %}<li>{{ tip }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+{% endif %}
+{% endblock %}

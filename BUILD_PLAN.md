@@ -26,15 +26,29 @@ Original code, built in public, one honest step at a time.
 - Chart.js weekly minutes chart
 - Dashboard summary cards
 
-## Day 5 (Oct 10) — Optional Gemini AI
+## Day 5 (Oct 10) — Optional Gemini AI ✅
 - `ai.py`: practice quiz + study tips via Gemini API
 - Works fully WITHOUT a key (graceful fallback message)
 - Never hardcode keys; reads GEMINI_API_KEY env var
+- `/courses/<id>/quiz` page: topic picker, generated quiz, reveal answers
+- requirements.txt += google-generativeai
 
-## Day 6 (Oct 11) — Polish & ship
-- README with screenshots + demo GIF instructions
-- Final QA pass, all tests green
-- Pin repo on profile (replaces neon-drift)
+## Day 6 (Oct 11) — Polish & ship ✅
+- README: what it is, features, how to run, optional Gemini setup,
+  6-day build story, project layout, screenshot capture guide
+  (no local renderer available in this environment — capture on any
+  machine with a browser)
+- Final QA pass: 38/38 pytest green + 26 fresh-DB route checks
+  (all pages, plan generation, session check-off, graceful no-key AI)
+- Demo script with real terminal output at
+  ~/workspace/linkedin-posts/demo-scripts/studygenie.json
+- NOTE (Oct 11): push blocked — `github` CLI write path needs an
+  approval no detached run can grant (same as Oct 10). Local commits
+  are complete; remote still at Day 4. Pin deferred until the push
+  lands so the pinned repo shows the finished README.
+
+BUILD COMPLETE — all 6 days built, tested, and committed locally.
+Push + profile pin pending the approval-gated GitHub write.
 
 ## Rules
 - 2–4 commits per day, natural messages, current dates only

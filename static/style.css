@@ -29,10 +29,24 @@ main { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
 .empty { color: #9aa4bb; }
 .form { display: grid; gap: 1rem; max-width: 420px; margin-top: 1rem; }
 .form label { display: grid; gap: .35rem; }
-.form input {
+.form input, .form select {
   padding: .55rem .7rem; border-radius: 8px;
   border: 1px solid #2c3852; background: #141b2c; color: #fff; font-size: 1rem;
 }
+.btn.small { padding: .3rem .7rem; font-size: .85rem; }
+.btn[disabled] { background: #2c3852; cursor: not-allowed; }
+.ai-note {
+  background: #1a2233; border: 1px dashed #4f7cff; border-radius: 10px;
+  padding: 1rem 1.2rem; margin: 1.2rem 0;
+}
+.ai-note code { background: #141b2c; padding: .1rem .35rem; border-radius: 5px; }
+.ai-note a { color: #9ec1ff; }
+.error { color: #ff9d6b; background: #1a2233; padding: .8rem 1rem; border-radius: 8px; }
+.quiz { display: grid; gap: 1.2rem; padding-left: 1.4rem; }
+.quiz .q { font-weight: 600; margin: 0 0 .4rem; }
+.choices { list-style: disc; padding-left: 1.2rem; margin: 0 0 .6rem; color: #c8d0e2; }
+.answer { margin-top: .5rem; }
+.tips { list-style: disc; padding-left: 1.4rem; display: grid; gap: .5rem; }
 .topics { list-style: none; padding: 0; display: grid; gap: .5rem; }
 .topics li { background: #1a2233; padding: .6rem .9rem; border-radius: 8px; }
 .diff {

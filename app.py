@@ -1,9 +1,9 @@
-"""StudyGenie web app — day 4: progress dashboard on top of the timetable."""
+"""StudyGenie web app — Flask + SQLite study planner."""
 import os
 from datetime import date, timedelta
 from flask import Flask, render_template, request, redirect, url_for
 
-from studygenie import db, scheduler, progress
+from studygenie import db, scheduler, progress, ai
 
 DB_PATH = os.environ.get("STUDYGENIE_DB", "studygenie.db")
 
@@ -101,6 +101,25 @@ def plan():
             "sessions": by_day.get(day.isoformat(), []),
         })
     return render_template("plan.html", days=days)
+
+
+@app.route("/courses/<int:course_id>/quiz", methods=["GET", "POST"])
+def quiz(course_id):
+    """Optional AI practice: pick a topic, get a quiz, reveal answers."""
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return "Course not found", 404
+    topics = db.list_topics(DB_PATH, course_id)
+    quiz_data, tips = None, None
+    if request.method == "POST":
+        if request.form.get("action") == "tips":
+            tips = ai.generate_tips(course["name"])
+        elif request.form.get("topic"):
+            quiz_data = ai.generate_quiz(request.form["topic"])
+    return render_template(
+        "quiz.html", course=course, topics=topics,
+        ai_enabled=ai.is_enabled(), quiz=quiz_data, tips=tips,
+    )
 
 
 @app.route("/sessions/<int:session_id>/done", methods=["POST"])
