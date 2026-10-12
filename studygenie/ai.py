@@ -42,9 +42,10 @@ def generate_quiz(topic_title, difficulty="medium"):
     """Five multiple-choice practice questions about a topic.
 
     Difficulty is one of easy/medium/hard, ported from the capstone's
-    quiz service design. Returns {"enabled": False} without an API key,
-    or a dict with the questions (and an "error" key if the API call
-    failed). Never raises.
+    quiz service design. Each question carries a short AI-generated
+    explanation of why the answer is correct. Returns {"enabled": False}
+    without an API key, or a dict with the questions (and an "error" key
+    if the API call failed). Never raises.
     """
     model = _model()
     if model is None:
@@ -62,14 +63,29 @@ def generate_quiz(topic_title, difficulty="medium"):
         f"Difficulty: {difficulty} — {difficulty_guidance[difficulty]}. "
         "Reply with ONLY a JSON object shaped like this:\n"
         '{"questions": [{"question": "...", "choices": ["A", "B", "C", "D"], '
-        '"answer": "B"}]}\n'
-        "Write the answer exactly as one of the listed choices."
+        '"answer": "B", '
+        '"explanation": "one or two sentences on why B is correct"}]}\n'
+        "Write the answer exactly as one of the listed choices. "
+        "Keep each explanation short and grounded in the topic; do not "
+        "invent textbook references."
     )
     data, error = _ask_json(model, prompt)
     if error:
         return {"enabled": True, "error": error}
+    questions = []
+    for q in data.get("questions", []):
+        if not isinstance(q, dict):
+            continue
+        if not q.get("question") or not q.get("choices") or not q.get("answer"):
+            continue  # malformed; skip rather than render broken UI
+        questions.append({
+            "question": q["question"],
+            "choices": q["choices"],
+            "answer": q["answer"],
+            "explanation": q.get("explanation", "") or "",
+        })
     return {"enabled": True, "topic": topic_title, "difficulty": difficulty,
-            "questions": data.get("questions", [])}
+            "questions": questions}
 
 
 def generate_tips(course_name):

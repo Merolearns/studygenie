@@ -52,10 +52,14 @@
       </ul>
       <button class="btn small reveal" type="button"
         onclick="this.nextElementSibling.hidden = !this.nextElementSibling.hidden; this.textContent = this.nextElementSibling.hidden ? 'Reveal answer' : 'Hide answer';">Reveal answer</button>
-      <p class="answer" hidden><strong>Answer:</strong> {{ q.answer }}</p>
+      <p class="answer" hidden><strong>Answer:</strong> {{ q.answer }}
+        {% if q.explanation %}<br><span class="meta">Why: {{ q.explanation }}
+        <em>(AI-generated — verify against your notes.)</em></span>{% endif %}
+      </p>
     </li>
     {% endfor %}
   </ol>
+  <p><a class="btn small" href="{{ url_for('session_setup', course_id=course.id) }}">Practice "{{ quiz.topic }}" in a study session &#8594;</a></p>
   {% endif %}
 {% endif %}
 

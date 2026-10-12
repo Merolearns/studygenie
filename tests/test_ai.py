@@ -621,3 +621,68 @@ def test_safe_filename():
     import app as app_module
     assert app_module._safe_filename("Databases 101!") == "databases-101"
     assert app_module._safe_filename("  ") == "study-guide"
+
+
+# --- quiz explanations (Phase 4 learning improvement) ---
+
+def test_quiz_explanation_parsed(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "_model", lambda: fake_model(
+        '{"questions": [{"question": "Q?", "choices": ["a", "b"],'
+        ' "answer": "a", "explanation": "Because a is right."}]}'))
+    result = ai.generate_quiz("T")
+    assert result["questions"][0]["explanation"] == "Because a is right."
+
+
+def test_quiz_missing_explanation_defaults_empty(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "_model", lambda: fake_model(
+        '{"questions": [{"question": "Q?", "choices": ["a", "b"],'
+        ' "answer": "a"}]}'))
+    result = ai.generate_quiz("T")
+    assert result["questions"][0]["explanation"] == ""
+
+
+def test_quiz_malformed_questions_filtered(monkeypatch):
+    import json
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    payload = {"questions": [
+        {"question": "Good?", "choices": ["a"], "answer": "a",
+         "explanation": "e"},
+        {"question": "No choices", "answer": "a"},
+        {"choices": ["a"], "answer": "a"},
+        "not a dict",
+        {"question": "No answer", "choices": ["a", "b"]},
+    ]}
+    monkeypatch.setattr(ai, "_model", lambda: fake_model(json.dumps(payload)))
+    result = ai.generate_quiz("T")
+    assert len(result["questions"]) == 1
+    assert result["questions"][0]["question"] == "Good?"
+
+
+def test_quiz_prompt_requests_explanations(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    model = fake_model('{"questions": []}')
+    monkeypatch.setattr(ai, "_model", lambda: model)
+    ai.generate_quiz("Joins")
+    assert "explanation" in model.prompts[0]
+
+
+def test_quiz_page_shows_explanation_and_session_link(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "generate_quiz",
+                        lambda title, difficulty="medium": {
+                            "enabled": True, "topic": title,
+                            "difficulty": difficulty,
+                            "questions": [{
+                                "question": "Q?", "choices": ["a", "b"],
+                                "answer": "a",
+                                "explanation": "a beats b."}]})
+    course_id = make_course(client)
+    resp = client.post(f"/courses/{course_id}/quiz",
+                       data={"action": "quiz", "topic": "Joins"})
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "a beats b." in html
+    assert "AI-generated" in html
+    assert f"/courses/{course_id}/session" in html
