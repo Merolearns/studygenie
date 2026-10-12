@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Study session — {{ sess.course_name }}{% endblock %}
+{% block content %}
+<h1>&#129504; {{ sess.course_name }}</h1>
+
+{% if sess.finished %}
+  <h2>Session review</h2>
+  <p class="meta">{{ sess.answers|length }} question{{ "s" if sess.answers|length != 1 }} answered
+  in {{ "AI Coach" if sess.mode == "ai" else "Practice Mode" }}.</p>
+  {% if sess.answers %}
+  <ol class="review-list">
+    {% for i in range(sess.answers|length) %}
+    <li>
+      <p><strong>Q:</strong> {{ sess.questions[i].question }}</p>
+      <p><strong>Your answer:</strong> {{ sess.answers[i] }}</p>
+      {% if sess.feedbacks[i] %}
+      <p><strong>What you covered:</strong> {{ sess.feedbacks[i].covered }}</p>
+      {% if sess.feedbacks[i].missed %}<p><strong>Missed:</strong> {{ sess.feedbacks[i].missed }}</p>{% endif %}
+      <p><strong>Suggestion:</strong> {{ sess.feedbacks[i].suggestion }}</p>
+      {% else %}
+      <p class="meta">Practice Mode doesn't grade answers — compare yours against your course notes.</p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="empty">No questions answered this session.</p>
+  {% endif %}
+  <p><a class="btn" href="{{ url_for('course_detail', course_id=sess.course_id) }}">Back to course</a></p>
+{% else %}
+  {% set idx = sess.current %}
+  {% set total = sess.length if sess.mode == "ai" else sess.questions|length %}
+  <p class="meta">Question {{ idx + 1 }} of {{ total }}
+  · {{ "AI Coach" if sess.mode == "ai" else "Practice Mode" }}</p>
+
+  {% if sess.mode == "practice" and total < sess.length %}
+  <p class="meta">Only {{ total }} questions available from your topics —
+  the session will end there rather than repeat questions.</p>
+  {% endif %}
+
+  {% if sess.error %}
+  <p class="error">{{ sess.error }}</p>
+  {% endif %}
+
+  <div class="question-card">
+    <p class="question">{{ sess.questions[idx].question }}</p>
+    {% if sess.questions[idx].topic %}
+    <p class="meta">Topic: {{ sess.questions[idx].topic }}</p>
+    {% endif %}
+  </div>
+
+  <form method="post" action="{{ url_for('session_answer', token=token) }}" class="form">
+    <label>Your answer
+      <textarea name="answer" rows="5" maxlength="{{ max_answer }}" required
+                placeholder="Answer in your own words...">{{ sess.pending_answer }}</textarea>
+    </label>
+    <div class="notes-actions">
+      <button class="btn" type="submit" id="submit-btn"
+              onclick="this.disabled=true; this.textContent='Working...'; this.form.submit();">Submit answer</button>
+    </div>
+  </form>
+  <form method="post" action="{{ url_for('session_finish', token=token) }}" class="form">
+    <button class="btn small" type="submit">Finish session</button>
+  </form>
+
+  {% if sess.answers %}
+  <h2>So far</h2>
+  <ol class="review-list">
+    {% for i in range(sess.answers|length) %}
+    <li>
+      <p><strong>Q:</strong> {{ sess.questions[i].question }}</p>
+      <p><strong>Your answer:</strong> {{ sess.answers[i] }}</p>
+      {% if sess.feedbacks[i] %}
+      <p><strong>Feedback:</strong> {{ sess.feedbacks[i].covered }}
+      {{ sess.feedbacks[i].suggestion }}</p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+{% endif %}
+{% endblock %}

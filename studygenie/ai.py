@@ -267,3 +267,91 @@ def generate_study_guide(course_name, topics, additional_notes=None,
                 "depth": depth}
     except Exception as exc:
         return {"enabled": True, "error": str(exc)}
+
+
+MAX_ANSWER_CHARS = 2000  # cap on a student's free-text session answer
+
+
+def generate_coach_question(course_name, topics, history=None):
+    """One study-coach question at a time.
+
+    history is a list of {"question":..., "answer":..., "feedback":...}
+    dicts from earlier in the session; empty/None for the first question.
+    Returns {"enabled": False} without a key, never raises.
+    """
+    model = _model()
+    if model is None:
+        return {"enabled": False}
+    topic_lines = "\n".join(f"- {t['title']}" for t in topics)
+    prompt = (
+        "You are a study coach helping a student actively learn. "
+        f"Course: '{course_name}'.\n"
+        f"Study topics:\n{topic_lines}\n\n"
+    )
+    history = history or []
+    if not history:
+        prompt += (
+            "Write ONE opening question grounded in these topics. Prefer "
+            "questions that test understanding, explanation, application, "
+            "or distinctions between concepts — not pure memorization. "
+            "Do not claim it predicts any exam question. "
+            "Reply with only the question, no preamble."
+        )
+    else:
+        last = history[-1]
+        prompt += (
+            "So far in this session:\n"
+            f"Q: {last['question']}\nA: {last['answer']}\n"
+            f"Feedback given: {last['feedback']}\n\n"
+            "Write ONE follow-up question that targets an identifiable gap "
+            "in the student's answer or explores the concept further. "
+            "Reply with only the question, no preamble."
+        )
+    try:
+        question = model.generate_content(prompt).text.strip()
+        if not question:
+            return {"enabled": True,
+                    "error": "The AI returned an empty question."}
+        return {"enabled": True, "question": question}
+    except Exception as exc:
+        return {"enabled": True, "error": str(exc)}
+
+
+def evaluate_coach_answer(question, answer, course_name, topics):
+    """Evaluate a student's free-text answer; return feedback + follow-up.
+
+    Returns {"enabled": False} without a key, never raises. On success:
+    {"enabled": True, "covered": ..., "missed": ..., "suggestion": ...,
+     "followup": ...}. The followup becomes the session's next question.
+    """
+    model = _model()
+    if model is None:
+        return {"enabled": False}
+    topic_lines = "\n".join(f"- {t['title']}" for t in topics)
+    prompt = (
+        "You are a study coach evaluating a student's answer. "
+        f"Course: '{course_name}'. Topics:\n{topic_lines}\n\n"
+        f"Question: {question}\n"
+        f"Student's answer: {answer}\n\n"
+        "Reply with ONLY a JSON object shaped like this:\n"
+        '{"covered": "what the answer correctly addresses", '
+        '"missed": "important omissions or misunderstandings, or empty string", '
+        '"suggestion": "one concrete improvement or clarification", '
+        '"followup": "one targeted follow-up question"}\n\n'
+        "Rules:\n"
+        "- Distinguish what the topics support from what cannot be verified; "
+        "if the material is too thin to judge a claim, say so.\n"
+        "- Accept reasonable alternative wording when the concept is correct.\n"
+        "- Do not label every incomplete answer incorrect.\n"
+        "- Do not claim the follow-up predicts any exam question."
+    )
+    data, error = _ask_json(model, prompt)
+    if error:
+        return {"enabled": True, "error": error}
+    for key in ("covered", "missed", "suggestion", "followup"):
+        if not data.get(key):
+            return {"enabled": True,
+                    "error": "The AI returned incomplete feedback."}
+    return {"enabled": True, "covered": data["covered"],
+            "missed": data["missed"], "suggestion": data["suggestion"],
+            "followup": data["followup"]}

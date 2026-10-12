@@ -236,6 +236,197 @@ def _safe_filename(name):
     return (stem or "study-guide")[:60]
 
 
+# --- interactive study sessions (server-side state, no persistence) ---
+
+import secrets as _secrets
+
+SESSIONS = {}  # token -> session dict; lives only in process memory
+SESSION_LENGTHS = (5, 10, 15)
+
+PRACTICE_TEMPLATES = (
+    "In your own words, explain: {title}.",
+    "What are the key ideas someone must understand about {title}?",
+    "What mistakes do students commonly make with {title}, "
+    "and how would you avoid them?",
+)
+
+
+def _practice_questions(topics, length):
+    """Deterministic questions from topic titles; never duplicated."""
+    questions = []
+    for t in topics:
+        for tpl in PRACTICE_TEMPLATES:
+            q = tpl.format(title=t["title"])
+            if q not in [x["question"] for x in questions]:
+                questions.append({"topic": t["title"], "question": q})
+            if len(questions) >= length:
+                return questions
+    return questions
+
+
+def _get_session_or_404(token):
+    sess = SESSIONS.get(token)
+    if sess is None:
+        return None
+    return sess
+
+
+@app.route("/courses/<int:course_id>/session", methods=["GET"])
+def session_setup(course_id):
+    """Study session setup: topics, length, AI Coach vs Practice Mode."""
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return "Course not found", 404
+    topics = db.list_topics(DB_PATH, course_id)
+    return render_template(
+        "session_setup.html", course=course, topics=topics,
+        ai_enabled=ai.is_enabled(), lengths=SESSION_LENGTHS)
+
+
+@app.route("/courses/<int:course_id>/session/start", methods=["POST"])
+def session_start(course_id):
+    """Validate setup choices and create the session."""
+    course = db.get_course(DB_PATH, course_id)
+    if course is None:
+        return "Course not found", 404
+    topics = db.list_topics(DB_PATH, course_id)
+    valid_ids = {t["id"] for t in topics}
+    try:
+        chosen_ids = {int(i) for i in request.form.getlist("topic_ids")}
+    except (TypeError, ValueError):
+        chosen_ids = set()
+    chosen_ids &= valid_ids
+    chosen = [t for t in topics if t["id"] in chosen_ids]
+    if not chosen:
+        return render_template(
+            "session_setup.html", course=course, topics=topics,
+            ai_enabled=ai.is_enabled(), lengths=SESSION_LENGTHS,
+            error="Select at least one topic to start a session."), 400
+    try:
+        length = int(request.form.get("length", 5))
+    except (TypeError, ValueError):
+        length = 5
+    if length not in SESSION_LENGTHS:
+        length = 5
+    mode = request.form.get("mode", "practice")
+    if mode == "ai":
+        if not ai.is_enabled():
+            return render_template(
+                "session_setup.html", course=course, topics=topics,
+                ai_enabled=False, lengths=SESSION_LENGTHS,
+                error="AI Coach needs a GEMINI_API_KEY. "
+                      "Use Practice Mode instead."), 400
+        first = ai.generate_coach_question(course["name"], chosen)
+        if first.get("error") or not first.get("question"):
+            return render_template(
+                "session_setup.html", course=course, topics=topics,
+                ai_enabled=True, lengths=SESSION_LENGTHS,
+                error=first.get("error") or "Could not start the session."), 502
+        questions = [{"topic": None, "question": first["question"]}]
+    else:
+        mode = "practice"
+        questions = _practice_questions(chosen, length)
+
+    token = _secrets.token_urlsafe(16)
+    SESSIONS[token] = {
+        "course_id": course_id, "course_name": course["name"],
+        "topics": [{"title": t["title"]} for t in chosen],
+        "mode": mode, "length": length,
+        "questions": questions,
+        "available": len(questions),  # practice may offer fewer than length
+        "answers": [], "feedbacks": [],
+        "current": 0, "finished": False,
+        "error": None, "pending_answer": "",
+    }
+    return redirect(url_for("study_session", token=token))
+
+
+@app.route("/session/<token>", methods=["GET"])
+def study_session(token):
+    """Current question (or final review when finished)."""
+    sess = _get_session_or_404(token)
+    if sess is None:
+        return "Session not found or expired.", 404
+    return render_template("session.html", sess=sess, token=token,
+                           max_answer=ai.MAX_ANSWER_CHARS)
+
+
+@app.route("/session/<token>/answer", methods=["POST"])
+def session_answer(token):
+    """Submit an answer; AI mode evaluates, practice mode acknowledges."""
+    sess = _get_session_or_404(token)
+    if sess is None:
+        return "Session not found or expired.", 404
+    if sess["finished"]:
+        return redirect(url_for("study_session", token=token))
+
+    answer = request.form.get("answer", "").strip()
+    if not answer:
+        sess["error"] = "Please write an answer before submitting."
+        sess["pending_answer"] = ""
+        return redirect(url_for("study_session", token=token))
+    if len(answer) > ai.MAX_ANSWER_CHARS:
+        sess["error"] = (f"Answer too long (max {ai.MAX_ANSWER_CHARS} "
+                         "characters). Please shorten it and retry.")
+        sess["pending_answer"] = answer[:ai.MAX_ANSWER_CHARS]
+        return redirect(url_for("study_session", token=token))
+
+    idx = sess["current"]
+    question = sess["questions"][idx]["question"]
+
+    if sess["mode"] == "ai":
+        history = [{"question": sess["questions"][i]["question"],
+                    "answer": sess["answers"][i],
+                    "feedback": _feedback_text(sess["feedbacks"][i])}
+                   for i in range(idx)]
+        result = ai.evaluate_coach_answer(
+            question, answer, sess["course_name"], sess["topics"])
+        if result.get("error"):
+            # do not advance; preserve answer for retry
+            sess["error"] = result["error"]
+            sess["pending_answer"] = answer
+            return redirect(url_for("study_session", token=token))
+        feedback = {k: result[k] for k in
+                    ("covered", "missed", "suggestion", "followup")}
+        sess["answers"].append(answer)
+        sess["feedbacks"].append(feedback)
+        sess["questions"].append(
+            {"topic": None, "question": result["followup"]})
+    else:
+        sess["answers"].append(answer)
+        sess["feedbacks"].append(None)
+
+    sess["current"] += 1
+    sess["error"] = None
+    sess["pending_answer"] = ""
+    if sess["mode"] == "ai":
+        done = len(sess["answers"]) >= sess["length"]
+    else:
+        done = sess["current"] >= len(sess["questions"])
+    if done:
+        sess["finished"] = True
+    return redirect(url_for("study_session", token=token))
+
+
+@app.route("/session/<token>/finish", methods=["POST"])
+def session_finish(token):
+    """End the session early; review shows completed interactions."""
+    sess = _get_session_or_404(token)
+    if sess is None:
+        return "Session not found or expired.", 404
+    sess["finished"] = True
+    sess["error"] = None
+    return redirect(url_for("study_session", token=token))
+
+
+def _feedback_text(feedback):
+    if not feedback:
+        return ""
+    return (f"Covered: {feedback['covered']} "
+            f"Missed: {feedback['missed']} "
+            f"Suggestion: {feedback['suggestion']}")
+
+
 @app.route("/courses/<int:course_id>/guide", methods=["GET", "POST"])
 def study_guide(course_id):
     """AI study guide built from the course's topics plus optional notes."""

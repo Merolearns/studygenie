@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Study session — {{ course.name }}{% endblock %}
+{% block content %}
+<h1>&#129504; Study session: {{ course.name }}</h1>
+<p class="meta">exam: {{ course.exam_date }}</p>
+
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+
+{% if not topics %}
+<p class="empty">This course has no topics yet. Add some topics to the course
+first — the coach won't invent material to quiz you on.</p>
+<p><a class="btn" href="{{ url_for('course_detail', course_id=course.id) }}">Back to course</a></p>
+{% else %}
+<form method="post" action="{{ url_for('session_start', course_id=course.id) }}" class="form">
+  <fieldset>
+    <legend>Topics to study</legend>
+    {% for t in topics %}
+    <label class="check-label">
+      <input type="checkbox" name="topic_ids" value="{{ t.id }}" checked>
+      {{ t.title }}
+    </label>
+    {% endfor %}
+  </fieldset>
+  <fieldset>
+    <legend>Session length</legend>
+    {% for n in lengths %}
+    <label class="check-label">
+      <input type="radio" name="length" value="{{ n }}"{% if n == 5 %} checked{% endif %}>
+      {{ n }} questions
+    </label>
+    {% endfor %}
+  </fieldset>
+  <fieldset>
+    <legend>Mode</legend>
+    <label class="check-label">
+      <input type="radio" name="mode" value="ai"{% if ai_enabled %} checked{% endif %}{% if not ai_enabled %} disabled{% endif %}>
+      AI Coach {% if not ai_enabled %}(needs GEMINI_API_KEY){% endif %}
+    </label>
+    <label class="check-label">
+      <input type="radio" name="mode" value="practice"{% if not ai_enabled %} checked{% endif %}>
+      Practice Mode (no AI — self-review prompts)
+    </label>
+  </fieldset>
+  {% if not ai_enabled %}
+  <p class="meta">AI Coach is unavailable without a
+  <code>GEMINI_API_KEY</code>. Practice Mode works fully offline.</p>
+  {% endif %}
+  <button class="btn" type="submit">Start session</button>
+</form>
+{% endif %}
+{% endblock %}

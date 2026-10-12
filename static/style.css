@@ -106,3 +106,15 @@ nav { margin-left: auto; }
 .center { text-align: center; }
 .check-label { display: flex; align-items: center; gap: .5rem; }
 .check-label input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+.question-card {
+  background: #1a2233; border-radius: 12px; padding: 1.5rem;
+  margin: 1rem 0; font-size: 1.1rem; line-height: 1.6;
+}
+.question { margin: 0; font-weight: 600; }
+.review-list { display: grid; gap: 1rem; padding-left: 1.25rem; }
+.review-list li {
+  background: #1a2233; border-radius: 10px; padding: 1rem 1.25rem;
+}
+.review-list p { margin: .4rem 0; }
+fieldset { border: 1px solid #2c3852; border-radius: 8px; padding: .75rem 1rem; margin-bottom: 1rem; }
+legend { padding: 0 .5rem; color: #9aa4bb; }
