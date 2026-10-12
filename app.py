@@ -20,13 +20,34 @@ DB_PATH = os.environ.get("STUDYGENIE_DB", "studygenie.db")
 
 app = Flask(__name__)
 
-# Secret key: from the environment in production; a random ephemeral key
-# for local development (sessions/CSRF won't survive restarts then).
+# --- production configuration ---
+# Set PRODUCTION=1 in real deployments. In production the app fails fast
+# without an externally supplied SECRET_KEY and hardens cookies/proxy
+# handling. Local development keeps working with zero configuration.
+PRODUCTION = os.environ.get("PRODUCTION", "").lower() in ("1", "true", "yes")
+
 app.secret_key = os.environ.get("SECRET_KEY")
 if not app.secret_key:
+    if PRODUCTION:
+        raise RuntimeError(
+            "SECRET_KEY is not set. Refusing to start in production without it."
+            " Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"")
     app.secret_key = _secrets_mod.token_hex(32)
     print("WARNING: SECRET_KEY not set — using an ephemeral key."
           " Set SECRET_KEY in production.")
+
+if PRODUCTION:
+    app.config.update(
+        SESSION_COOKIE_SECURE=True,    # cookies only over HTTPS
+        SESSION_COOKIE_HTTPONLY=True,  # no JS access to the session cookie
+        SESSION_COOKIE_SAMESITE="Lax",
+        PREFERRED_URL_SCHEME="https",
+    )
+    # trust X-Forwarded-Proto/Host from the reverse proxy (Caddy/nginx)
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+app.config["DEBUG"] = False
 
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -50,6 +71,30 @@ def load_user(user_id):
 @app.errorhandler(CSRFError)
 def _csrf_error(error):
     return ("Security check failed. Please go back and try again.", 400)
+
+
+@app.errorhandler(404)
+def _not_found(error):
+    return render_template("error.html", code=404,
+                           message="That page doesn't exist."), 404
+
+
+@app.errorhandler(500)
+def _server_error(error):
+    # Never expose stack traces or internals to users.
+    return render_template("error.html", code=500,
+                           message="Something went wrong on our end."), 500
+
+
+@app.route("/healthz")
+def healthz():
+    """Unauthenticated health check for the reverse proxy / orchestrator."""
+    try:
+        with db.connect(DB_PATH) as conn:
+            conn.execute("SELECT 1").fetchone()
+        return {"status": "ok"}, 200
+    except Exception:
+        return {"status": "error"}, 503
 
 
 # Simple login rate limiting: 5 failures -> 15 min lockout per email+IP.

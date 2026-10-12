@@ -1,0 +1,44 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      PRODUCTION: "1"
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      STUDYGENIE_DB: /data/studygenie.db
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - studygenie-data:/data
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  studygenie-data:   # SQLite database — survives restarts and redeploys
+  caddy-data:        # TLS certificates
+  caddy-config:

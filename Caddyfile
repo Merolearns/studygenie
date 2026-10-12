@@ -1,0 +1,5 @@
+# Replace with your domain before first deploy.
+# Caddy obtains and renews a Let's Encrypt certificate automatically.
+{$DOMAIN:studygenie.example.com} {
+	reverse_proxy app:8000
+}

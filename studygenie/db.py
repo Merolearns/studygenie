@@ -123,9 +123,19 @@ def adopt_orphans(db_path, user_id):
 
 
 def connect(db_path):
+    """Open a connection with foreign keys and WAL mode enabled.
+
+    WAL lets readers proceed while a write is in progress and makes
+    crash recovery robust — the right journal mode for a small
+    multi-user deployment on one server.
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.OperationalError:
+        pass  # e.g. read-only contexts; rollback journal still works
     return conn
 
 
