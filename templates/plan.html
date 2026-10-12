@@ -12,6 +12,7 @@
       {% for s in d.sessions %}
       <li class="{% if s.completed %}done{% endif %}">
         <form method="post" action="{{ url_for('toggle_done', session_id=s.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="check" type="submit" title="toggle completed">{% if s.completed %}&#10003;{% else %}&#9675;{% endif %}</button>
         </form>
         <div>

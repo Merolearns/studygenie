@@ -18,6 +18,7 @@
 {% endif %}
 {% if topics %}
 <form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="form-row">
     <label>Topic
       <select name="topic">
@@ -65,6 +66,7 @@
 
 <h2>Study tips</h2>
 <form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <button class="btn" type="submit" name="action" value="tips"{% if not ai_enabled %} disabled{% endif %}>Get 3 AI study tips</button>
 </form>
 {% if tips and tips.enabled %}

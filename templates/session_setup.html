@@ -14,6 +14,7 @@ first — the coach won't invent material to quiz you on.</p>
 <p><a class="btn" href="{{ url_for('course_detail', course_id=course.id) }}">Back to course</a></p>
 {% else %}
 <form method="post" action="{{ url_for('session_start', course_id=course.id) }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <fieldset>
     <legend>Topics to study</legend>
     {% for t in topics %}

@@ -12,20 +12,6 @@ import app as app_module
 from studygenie import ai, db
 
 
-@pytest.fixture
-def client():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    db.init_db(path)
-    old = app_module.DB_PATH
-    app_module.DB_PATH = path
-    app_module.SESSIONS.clear()
-    app_module.app.config["TESTING"] = True
-    with app_module.app.test_client() as client:
-        yield client
-    app_module.DB_PATH = old
-    app_module.SESSIONS.clear()
-    os.unlink(path)
 
 
 def make_course(client, name="Databases", topics=("Joins", "Indexing")):

@@ -14,6 +14,7 @@
   {% for s in up_next %}
   <li>
     <form method="post" action="{{ url_for('toggle_done', session_id=s.id) }}" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="check" type="submit" title="Mark done">&#10003;</button>
     </form>
     <div>

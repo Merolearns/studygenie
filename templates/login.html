@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Log in — StudyGenie{% endblock %}
+{% block content %}
+<h1>Log in to StudyGenie</h1>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Email
+    <input type="email" name="email" required maxlength="120">
+  </label>
+  <label>Password
+    <input type="password" name="password" required>
+  </label>
+  <button class="btn" type="submit">Log in</button>
+</form>
+<p class="meta">New here? <a href="{{ url_for('register') }}">Create an account</a>.</p>
+{% endblock %}

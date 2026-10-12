@@ -13,106 +13,98 @@ from studygenie import db, progress
 
 
 def fresh_db():
+    from werkzeug.security import generate_password_hash
+    import uuid as _uuid
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     db.init_db(path)
-    return path
+    uid = db.add_user(path, f"t{_uuid.uuid4().hex[:8]}@x.com",
+                      generate_password_hash("password123"))
+    return path, uid
 
 
-def seed(path, course_name="Databases", exam_in_days=10):
-    return db.add_course(path, course_name,
+def seed(path, uid, course_name="Databases", exam_in_days=10):
+    return db.add_course(path, uid, course_name,
                          (date.today() + timedelta(days=exam_in_days)).isoformat())
 
 
-def complete(path, course_id, topic_id, day_offset, minutes=30):
+def complete(path, uid, course_id, topic_id, day_offset, minutes=30):
     """Add a session `day_offset` days from today and mark it completed."""
     day = (date.today() + timedelta(days=day_offset)).isoformat()
-    sid = db.add_session(path, course_id, topic_id, day, minutes)
-    db.toggle_session(path, sid)
+    sid = db.add_session(path, course_id, uid, topic_id, day, minutes)
+    db.toggle_session(path, sid, uid)
     return sid
 
 
-@pytest.fixture
-def client():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    db.init_db(path)
-    old = app_module.DB_PATH
-    app_module.DB_PATH = path
-    app_module.app.config["TESTING"] = True
-    with app_module.app.test_client() as client:
-        yield client
-    app_module.DB_PATH = old
-    os.unlink(path)
 
 
 def test_streak_counts_consecutive_days():
-    path = fresh_db()
-    cid = seed(path)
-    tid = db.add_topic(path, cid, "Joins", 3)
-    complete(path, cid, tid, 0)
-    complete(path, cid, tid, -1)
-    complete(path, cid, tid, -2)
-    assert progress.streak(path) == 3
+    path, uid = fresh_db()
+    cid = seed(path, uid)
+    tid = db.add_topic(path, cid, uid, "Joins", 3)
+    complete(path, uid, cid, tid, 0)
+    complete(path, uid, cid, tid, -1)
+    complete(path, uid, cid, tid, -2)
+    assert progress.streak(path, uid) == 3
     os.unlink(path)
 
 
 def test_streak_breaks_on_gap():
-    path = fresh_db()
-    cid = seed(path)
-    tid = db.add_topic(path, cid, "Joins", 3)
-    complete(path, cid, tid, 0)
-    complete(path, cid, tid, -2)  # yesterday missing
-    assert progress.streak(path) == 1
+    path, uid = fresh_db()
+    cid = seed(path, uid)
+    tid = db.add_topic(path, cid, uid, "Joins", 3)
+    complete(path, uid, cid, tid, 0)
+    complete(path, uid, cid, tid, -2)  # yesterday missing
+    assert progress.streak(path, uid) == 1
     os.unlink(path)
 
 
 def test_streak_zero_when_nothing_done_today():
-    path = fresh_db()
-    cid = seed(path)
-    tid = db.add_topic(path, cid, "Joins", 3)
-    complete(path, cid, tid, -1)
-    assert progress.streak(path) == 0
+    path, uid = fresh_db()
+    cid = seed(path, uid)
+    tid = db.add_topic(path, cid, uid, "Joins", 3)
+    complete(path, uid, cid, tid, -1)
+    assert progress.streak(path, uid) == 0
     os.unlink(path)
 
 
 def test_weekly_completion_math():
-    path = fresh_db()
-    cid = seed(path)
-    tid = db.add_topic(path, cid, "Joins", 3)
+    path, uid = fresh_db()
+    cid = seed(path, uid)
+    tid = db.add_topic(path, cid, uid, "Joins", 3)
     for offset in (0, -1, -2, -3):
-        db.add_session(path, cid, tid,
+        db.add_session(path, cid, uid, tid,
                        (date.today() + timedelta(days=offset)).isoformat(), 30)
-    complete(path, cid, tid, 0)
-    complete(path, cid, tid, -1)
-    pct, done, total = progress.weekly_completion(path)
+    complete(path, uid, cid, tid, 0)
+    complete(path, uid, cid, tid, -1)
+    pct, done, total = progress.weekly_completion(path, uid)
     assert (pct, done, total) == (33, 2, 6)
     os.unlink(path)
 
 
 def test_weekly_completion_empty():
-    path = fresh_db()
-    assert progress.weekly_completion(path) == (0, 0, 0)
+    path, uid = fresh_db()
+    assert progress.weekly_completion(path, uid) == (0, 0, 0)
     os.unlink(path)
 
 
 def test_total_minutes_counts_completed_only():
-    path = fresh_db()
-    cid = seed(path)
-    tid = db.add_topic(path, cid, "Joins", 3)
-    complete(path, cid, tid, 0, minutes=45)
-    db.add_session(path, cid, tid, date.today().isoformat(), 30)  # incomplete
-    assert progress.total_minutes(path) == 45
+    path, uid = fresh_db()
+    cid = seed(path, uid)
+    tid = db.add_topic(path, cid, uid, "Joins", 3)
+    complete(path, uid, cid, tid, 0, minutes=45)
+    db.add_session(path, cid, uid, tid, date.today().isoformat(), 30)  # incomplete
+    assert progress.total_minutes(path, uid) == 45
     os.unlink(path)
 
 
 def test_minutes_by_day_series():
-    path = fresh_db()
-    cid = seed(path)
-    tid = db.add_topic(path, cid, "Joins", 3)
-    complete(path, cid, tid, 0, minutes=45)
-    complete(path, cid, tid, -2, minutes=20)
-    series = progress.minutes_by_day(path)
+    path, uid = fresh_db()
+    cid = seed(path, uid)
+    tid = db.add_topic(path, cid, uid, "Joins", 3)
+    complete(path, uid, cid, tid, 0, minutes=45)
+    complete(path, uid, cid, tid, -2, minutes=20)
+    series = progress.minutes_by_day(path, uid)
     assert len(series) == 7
     by_date = {s["date"]: s["minutes"] for s in series}
     assert by_date[date.today().isoformat()] == 45
@@ -124,13 +116,13 @@ def test_minutes_by_day_series():
 
 
 def test_course_progress_percentages():
-    path = fresh_db()
-    cid = seed(path, "Databases")
-    other = seed(path, "Algorithms")
-    tid = db.add_topic(path, cid, "Joins", 3)
-    db.add_session(path, cid, tid, date.today().isoformat(), 30)
-    complete(path, cid, tid, -1)
-    rows = {r["id"]: r for r in progress.course_progress(path)}
+    path, uid = fresh_db()
+    cid = seed(path, uid, "Databases")
+    other = seed(path, uid, "Algorithms")
+    tid = db.add_topic(path, cid, uid, "Joins", 3)
+    db.add_session(path, cid, uid, tid, date.today().isoformat(), 30)
+    complete(path, uid, cid, tid, -1)
+    rows = {r["id"]: r for r in progress.course_progress(path, uid)}
     assert rows[cid]["pct"] == 50
     assert rows[cid]["done"] == 1
     assert rows[cid]["total"] == 2

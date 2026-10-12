@@ -18,13 +18,21 @@ def fresh_db():
     return path
 
 
+def _make_uid(path):
+    from werkzeug.security import generate_password_hash
+    import uuid as _uuid
+    return db.add_user(path, f"u{_uuid.uuid4().hex[:8]}@x.com",
+                       generate_password_hash("password123"))
+
+
 def seed(path, exam_offset_days, topics):
     """topics: list of (title, difficulty)."""
     exam = (TODAY + timedelta(days=exam_offset_days)).isoformat()
-    cid = db.add_course(path, "CPSC 483", exam)
+    uid = _make_uid(path)
+    cid = db.add_course(path, uid, "CPSC 483", exam)
     for title, difficulty in topics:
-        db.add_topic(path, cid, title, difficulty)
-    return cid
+        db.add_topic(path, cid, uid, title, difficulty)
+    return cid, uid
 
 
 def test_urgency_overdue_is_maximum():
@@ -39,8 +47,8 @@ def test_urgency_overdue_is_maximum():
 
 def test_overdue_course_plans_everything_today():
     path = fresh_db()
-    cid = seed(path, -2, [("KNN", 2), ("Backprop", 5), ("Trees", 3)])
-    plan = scheduler.generate_plan(path, cid)
+    cid, uid = seed(path, -2, [("KNN", 2), ("Backprop", 5), ("Trees", 3)])
+    plan = scheduler.generate_plan(path, cid, uid)
     # overdue exam: only today is left, and reviews past the exam drop out
     assert {s["date"] for s in plan} == {TODAY.isoformat()}
     os.unlink(path)
@@ -48,8 +56,8 @@ def test_overdue_course_plans_everything_today():
 
 def test_harder_topic_gets_more_minutes():
     path = fresh_db()
-    cid = seed(path, 14, [("KNN basics", 1), ("Backprop", 5)])
-    plan = scheduler.generate_plan(path, cid, minutes_per_day=60)
+    cid, uid = seed(path, 14, [("KNN basics", 1), ("Backprop", 5)])
+    plan = scheduler.generate_plan(path, cid, uid, minutes_per_day=60)
     by_title = {s["topic_title"]: s for s in plan if s["date"] == TODAY.isoformat()}
     assert by_title["Backprop"]["minutes"] > by_title["KNN basics"]["minutes"]
     # harder also goes first
@@ -60,8 +68,8 @@ def test_harder_topic_gets_more_minutes():
 
 def test_plan_covers_all_topics():
     path = fresh_db()
-    cid = seed(path, 14, [("A", 2), ("B", 4), ("C", 1), ("D", 5)])
-    plan = scheduler.generate_plan(path, cid)
+    cid, uid = seed(path, 14, [("A", 2), ("B", 4), ("C", 1), ("D", 5)])
+    plan = scheduler.generate_plan(path, cid, uid)
     firsts = {s["topic_id"] for s in plan}
     assert len(firsts) == 4
     os.unlink(path)
@@ -69,9 +77,9 @@ def test_plan_covers_all_topics():
 
 def test_daily_budget_respected():
     path = fresh_db()
-    cid = seed(path, 10, [(f"Topic {i}", (i % 5) + 1) for i in range(8)])
+    cid, uid = seed(path, 10, [(f"Topic {i}", (i % 5) + 1) for i in range(8)])
     for budget in (60, 45):
-        plan = scheduler.generate_plan(path, cid, minutes_per_day=budget)
+        plan = scheduler.generate_plan(path, cid, uid, minutes_per_day=budget)
         per_day = {}
         for s in plan:
             per_day.setdefault(s["date"], 0)
@@ -82,8 +90,8 @@ def test_daily_budget_respected():
 
 def test_spaced_repetition_offsets():
     path = fresh_db()
-    cid = seed(path, 20, [("KNN", 3)])
-    plan = scheduler.generate_plan(path, cid)
+    cid, uid = seed(path, 20, [("KNN", 3)])
+    plan = scheduler.generate_plan(path, cid, uid)
     dates = sorted(s["date"] for s in plan)
     expected = [TODAY + timedelta(days=d) for d in (0, 1, 3, 7)]
     assert dates == [d.isoformat() for d in expected]
@@ -92,8 +100,8 @@ def test_spaced_repetition_offsets():
 
 def test_reviews_stop_at_exam():
     path = fresh_db()
-    cid = seed(path, 2, [("KNN", 3)])
-    plan = scheduler.generate_plan(path, cid)
+    cid, uid = seed(path, 2, [("KNN", 3)])
+    plan = scheduler.generate_plan(path, cid, uid)
     dates = sorted(s["date"] for s in plan)
     # exam is in 2 days: only the +1-day review still counts
     assert dates == [TODAY.isoformat(), (TODAY + timedelta(days=1)).isoformat()]
@@ -102,14 +110,14 @@ def test_reviews_stop_at_exam():
 
 def test_save_plan_replaces_pending():
     path = fresh_db()
-    cid = seed(path, 14, [("KNN", 3), ("Trees", 2)])
-    plan = scheduler.generate_plan(path, cid)
-    scheduler.save_plan(path, cid, plan)
-    first_count = len(db.list_sessions(path, cid))
+    cid, uid = seed(path, 14, [("KNN", 3), ("Trees", 2)])
+    plan = scheduler.generate_plan(path, cid, uid)
+    scheduler.save_plan(path, cid, uid, plan)
+    first_count = len(db.list_sessions(path, cid, uid))
     assert first_count == len(plan)
     # regenerating replaces, not duplicates
-    scheduler.save_plan(path, cid, plan)
-    assert len(db.list_sessions(path, cid)) == first_count
+    scheduler.save_plan(path, cid, uid, plan)
+    assert len(db.list_sessions(path, cid, uid)) == first_count
     os.unlink(path)
 
 
@@ -117,11 +125,12 @@ def test_save_plan_replaces_pending():
 
 def _course_with_topics(db_path):
     from studygenie import db as dbm
-    cid = dbm.add_course(db_path, "Physics",
+    uid = _make_uid(db_path)
+    cid = dbm.add_course(db_path, uid, "Physics",
                          (date.today() + timedelta(days=14)).isoformat())
     for title, diff in [("Kinematics", 5), ("Forces", 4), ("Energy", 3)]:
-        dbm.add_topic(db_path, cid, title, diff)
-    return cid
+        dbm.add_topic(db_path, cid, uid, title, diff)
+    return cid, uid
 
 
 def test_availability_zero_day_skipped(tmp_path):
@@ -129,10 +138,10 @@ def test_availability_zero_day_skipped(tmp_path):
     from studygenie import scheduler as sched
     path = str(tmp_path / "s.db")
     dbm.init_db(path)
-    cid = _course_with_topics(path)
+    cid, uid = _course_with_topics(path)
     # zero out every weekday except Monday
-    dbm.set_availability(path, {i: (120 if i == 0 else 0) for i in range(7)})
-    plan = sched.generate_plan(path, cid, use_availability=True,
+    dbm.set_availability(path, uid, {i: (120 if i == 0 else 0) for i in range(7)})
+    plan = sched.generate_plan(path, cid, uid, use_availability=True,
                                start_date=date.today().isoformat())
     assert plan, "plan should not be empty"
     for s in plan:
@@ -144,9 +153,9 @@ def test_availability_off_uses_flat_budget(tmp_path):
     from studygenie import scheduler as sched
     path = str(tmp_path / "s.db")
     dbm.init_db(path)
-    cid = _course_with_topics(path)
-    dbm.set_availability(path, {i: 0 for i in range(7)})
-    plan = sched.generate_plan(path, cid, minutes_per_day=60,
+    cid, uid = _course_with_topics(path)
+    dbm.set_availability(path, uid, {i: 0 for i in range(7)})
+    plan = sched.generate_plan(path, cid, uid, minutes_per_day=60,
                                use_availability=False,
                                start_date=date.today().isoformat())
     assert plan, "flat budget should ignore availability"

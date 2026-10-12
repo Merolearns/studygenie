@@ -50,6 +50,7 @@
   </div>
 
   <form method="post" action="{{ url_for('session_answer', token=token) }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Your answer
       <textarea name="answer" rows="5" maxlength="{{ max_answer }}" required
                 placeholder="Answer in your own words...">{{ sess.pending_answer }}</textarea>
@@ -60,6 +61,7 @@
     </div>
   </form>
   <form method="post" action="{{ url_for('session_finish', token=token) }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn small" type="submit">Finish session</button>
   </form>
 

@@ -12,18 +12,6 @@ import app as app_module
 from studygenie import db
 
 
-@pytest.fixture
-def client():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    db.init_db(path)
-    old = app_module.DB_PATH
-    app_module.DB_PATH = path
-    app_module.app.config["TESTING"] = True
-    with app_module.app.test_client() as client:
-        yield client
-    app_module.DB_PATH = old
-    os.unlink(path)
 
 
 def make_course_with_plan(client, exam_in_days=10):
@@ -36,9 +24,9 @@ def make_course_with_plan(client, exam_in_days=10):
     return course_id
 
 
-def test_plan_shows_this_week(client):
+def test_plan_shows_this_week(client, uid):
     course_id = make_course_with_plan(client)
-    sessions = db.list_sessions(app_module.DB_PATH, course_id)
+    sessions = db.list_sessions(app_module.DB_PATH, course_id, uid)
     assert sessions, "plan generator should have saved sessions"
     resp = client.get("/plan")
     assert resp.status_code == 200
@@ -47,20 +35,20 @@ def test_plan_shows_this_week(client):
     assert "Today" in html  # today's column is highlighted
 
 
-def test_toggle_session_marks_completed(client):
+def test_toggle_session_marks_completed(client, uid):
     course_id = make_course_with_plan(client)
-    sessions = db.list_sessions(app_module.DB_PATH, course_id)
+    sessions = db.list_sessions(app_module.DB_PATH, course_id, uid)
     session_id = sessions[0]["id"]
     assert sessions[0]["completed"] == 0
 
     resp = client.post(f"/sessions/{session_id}/done")
     assert resp.status_code == 302
-    after = db.list_sessions(app_module.DB_PATH, course_id)
+    after = db.list_sessions(app_module.DB_PATH, course_id, uid)
     assert [s for s in after if s["id"] == session_id][0]["completed"] == 1
 
     # toggling again undoes it
     client.post(f"/sessions/{session_id}/done")
-    again = db.list_sessions(app_module.DB_PATH, course_id)
+    again = db.list_sessions(app_module.DB_PATH, course_id, uid)
     assert [s for s in again if s["id"] == session_id][0]["completed"] == 0
 
 
@@ -69,9 +57,9 @@ def test_toggle_missing_session_is_harmless(client):
     assert resp.status_code == 302
 
 
-def test_completed_session_rendered_done(client):
+def test_completed_session_rendered_done(client, uid):
     course_id = make_course_with_plan(client)
-    sessions = db.list_sessions(app_module.DB_PATH, course_id)
+    sessions = db.list_sessions(app_module.DB_PATH, course_id, uid)
     client.post(f"/sessions/{sessions[0]['id']}/done")
     html = client.get("/plan").get_data(as_text=True)
     assert 'class="done"' in html
@@ -100,7 +88,7 @@ def test_edit_course_roundtrip(client):
     assert "Biology" in html and "2026-12-25" in html
 
 
-def test_edit_course_invalid_date_keeps_old(client):
+def test_edit_course_invalid_date_keeps_old(client, uid):
     cid = _make_course_with_topic(client)
     resp = client.post(f"/courses/{cid}/edit",
                        data={"name": "Bio", "exam_date": "not-a-date"})
@@ -109,7 +97,7 @@ def test_edit_course_invalid_date_keeps_old(client):
     # stored data unchanged
     from studygenie import db as dbm
     import app as app_module
-    assert dbm.get_course(app_module.DB_PATH, cid)["name"] == "Bio"
+    assert dbm.get_course(app_module.DB_PATH, cid, uid)["name"] == "Bio"
 
 
 def test_edit_course_missing_404(client):
@@ -118,7 +106,7 @@ def test_edit_course_missing_404(client):
                        data={"name": "X", "exam_date": "2026-12-20"}).status_code == 404
 
 
-def test_delete_course_confirmation_and_cancel(client):
+def test_delete_course_confirmation_and_cancel(client, uid):
     cid = _make_course_with_topic(client)
     # GET confirmation does not delete
     resp = client.get(f"/courses/{cid}/delete")
@@ -126,11 +114,11 @@ def test_delete_course_confirmation_and_cancel(client):
     assert "permanent" in resp.get_data(as_text=True).lower()
     from studygenie import db as dbm
     import app as app_module
-    assert dbm.get_course(app_module.DB_PATH, cid) is not None
+    assert dbm.get_course(app_module.DB_PATH, cid, uid) is not None
     # cancel (POST without confirm) does not delete
     resp = client.post(f"/courses/{cid}/delete", data={})
     assert resp.status_code == 302
-    assert dbm.get_course(app_module.DB_PATH, cid) is not None
+    assert dbm.get_course(app_module.DB_PATH, cid, uid) is not None
 
 
 def test_delete_course_confirmed_removes_all(client):
@@ -190,12 +178,12 @@ def test_edit_topic_wrong_course_404(client):
                        data={"title": "Hijack", "difficulty": 1}).status_code == 404
 
 
-def test_delete_topic_keeps_sessions_detached(client):
+def test_delete_topic_keeps_sessions_detached(client, uid):
     from studygenie import db as dbm
     import app as app_module
     cid = _make_course_with_topic(client)
     tid = _topic_id(client, cid)
-    dbm.add_session(app_module.DB_PATH, cid, tid, "2026-12-01", 30)
+    dbm.add_session(app_module.DB_PATH, cid, uid, tid, "2026-12-01", 30)
     resp = client.get(f"/courses/{cid}/topics/{tid}/delete")
     assert resp.status_code == 200
     assert "detached" in resp.get_data(as_text=True)
@@ -204,17 +192,17 @@ def test_delete_topic_keeps_sessions_detached(client):
     html = resp.get_data(as_text=True)
     assert resp.status_code == 200
     assert "Topic deleted." in html
-    sessions = dbm.list_sessions(app_module.DB_PATH, cid)
+    sessions = dbm.list_sessions(app_module.DB_PATH, cid, uid)
     assert len(sessions) == 1 and sessions[0]["topic_id"] is None
 
 
-def test_delete_topic_cancel_preserves(client):
+def test_delete_topic_cancel_preserves(client, uid):
     from studygenie import db as dbm
     import app as app_module
     cid = _make_course_with_topic(client)
     tid = _topic_id(client, cid)
     client.post(f"/courses/{cid}/topics/{tid}/delete", data={})
-    assert dbm.get_topic(app_module.DB_PATH, tid) is not None
+    assert dbm.get_topic(app_module.DB_PATH, tid, uid) is not None
 
 
 def test_course_page_shows_edit_delete_actions(client):

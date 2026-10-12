@@ -6,6 +6,7 @@
 <p class="error">{{ error }}</p>
 {% endif %}
 <form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Course name
     <input name="name" required maxlength="80" placeholder="e.g. CPSC 483 Machine Learning" value="{{ name or '' }}">
   </label>

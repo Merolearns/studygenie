@@ -93,18 +93,6 @@ def test_markdown_fences_stripped(monkeypatch):
 
 # --- route tests for the quiz page ---
 
-@pytest.fixture
-def client():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    db.init_db(path)
-    old = app_module.DB_PATH
-    app_module.DB_PATH = path
-    app_module.app.config["TESTING"] = True
-    with app_module.app.test_client() as client:
-        yield client
-    app_module.DB_PATH = old
-    os.unlink(path)
 
 
 def make_course(client):

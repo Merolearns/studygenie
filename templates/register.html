@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Create account — StudyGenie{% endblock %}
+{% block content %}
+<h1>Create your account</h1>
+{% if notice == "account-deleted" %}
+<p class="success">Your account and all its data were deleted.</p>
+{% endif %}
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Email
+    <input type="email" name="email" required maxlength="120" placeholder="you@example.com">
+  </label>
+  <label>Password (at least 8 characters)
+    <input type="password" name="password" required minlength="8">
+  </label>
+  <button class="btn" type="submit">Create account</button>
+</form>
+<p class="meta">Already have an account? <a href="{{ url_for('login') }}">Log in</a>.</p>
+{% endblock %}

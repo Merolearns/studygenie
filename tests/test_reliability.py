@@ -14,20 +14,6 @@ import app as app_module
 from studygenie import ai, db
 
 
-@pytest.fixture
-def client():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    db.init_db(path)
-    old = app_module.DB_PATH
-    app_module.DB_PATH = path
-    app_module.SESSIONS.clear()
-    app_module.app.config["TESTING"] = True
-    with app_module.app.test_client() as client:
-        yield client
-    app_module.DB_PATH = old
-    app_module.SESSIONS.clear()
-    os.unlink(path)
 
 
 def _course_count():
@@ -48,9 +34,9 @@ def make_course(client, name="Physics", exam="2026-12-20"):
 
 # --- 1. exam date validation ---
 
-def test_valid_exam_date_creates_course(client):
+def test_valid_exam_date_creates_course(client, uid):
     cid = make_course(client, exam="2026-12-20")
-    assert db.get_course(app_module.DB_PATH, cid)["exam_date"] == "2026-12-20"
+    assert db.get_course(app_module.DB_PATH, cid, uid)["exam_date"] == "2026-12-20"
 
 
 def test_malformed_exam_date_rejected_no_record(client):
@@ -133,10 +119,10 @@ def test_valid_exam_date_unit():
     assert app_module._valid_exam_date("12/20/2026") is False
 
 
-def test_legacy_bad_date_plan_returns_400_not_500(client):
+def test_legacy_bad_date_plan_returns_400_not_500(client, uid):
     # a database predating validation may hold a bad date; the plan
     # route must fail gracefully instead of crashing
-    cid = db.add_course(app_module.DB_PATH, "Legacy", "garbage")
+    cid = db.add_course(app_module.DB_PATH, uid, "Legacy", "garbage")
     resp = client.post(f"/courses/{cid}/plan", data={"minutes_per_day": 60})
     assert resp.status_code == 400
     assert "invalid exam date" in resp.get_data(as_text=True)
