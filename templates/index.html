@@ -1,9 +1,80 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>My courses</h1>
+<h1>Study dashboard</h1>
 {% if notice == "course-deleted" %}
 <p class="success">Course deleted.</p>
 {% endif %}
+{% if streak %}
+<p class="meta">&#128293; {{ streak }}-day study streak — keep it going.</p>
+{% endif %}
+
+<h2>Up next</h2>
+{% if up_next %}
+<ol class="dash-list">
+  {% for s in up_next %}
+  <li>
+    <form method="post" action="{{ url_for('toggle_done', session_id=s.id) }}" class="inline-form">
+      <button class="check" type="submit" title="Mark done">&#10003;</button>
+    </form>
+    <div>
+      <strong>{{ s.topic_title or "Study session" }}</strong>
+      <span class="meta">{{ s.course_name }} · {{ s.minutes }} min</span>
+      {% if s.is_review %}<span class="tag">Review</span>{% endif %}
+      <div class="meta">{{ s.reason }}</div>
+    </div>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="empty">Nothing scheduled. Add a course, add topics, and generate a study plan to get started.</p>
+{% endif %}
+
+{% if overdue %}
+<h2>Needs attention</h2>
+<p class="meta">These sessions were planned for earlier dates and are still open.</p>
+<ul class="dash-list">
+  {% for s in overdue %}
+  <li>
+    <div>
+      <strong>{{ s.topic_title or "Study session" }}</strong>
+      <span class="meta">{{ s.course_name }} · planned {{ s.planned_date }}</span>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>Upcoming exams</h2>
+{% if exams %}
+<ul class="dash-list">
+  {% for e in exams %}
+  <li>
+    <div>
+      <a href="{{ url_for('course_detail', course_id=e.id) }}"><strong>{{ e.name }}</strong></a>
+      <span class="meta">{{ e.exam_date }} · {% if e.days_left == 0 %}today{% elif e.days_left == 1 %}tomorrow{% else %}in {{ e.days_left }} days{% endif %}</span>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No upcoming exams.</p>
+{% endif %}
+
+{% if recent %}
+<h2>Recently completed</h2>
+<ul class="dash-list">
+  {% for s in recent %}
+  <li>
+    <div>
+      <strong>{{ s.topic_title or "Study session" }}</strong>
+      <span class="meta">{{ s.course_name }} · {{ s.minutes }} min · {{ s.planned_date }}</span>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>My courses</h2>
 <a class="btn" href="{{ url_for('new_course') }}">+ Add course</a>
 {% if courses %}
 <ul class="cards">

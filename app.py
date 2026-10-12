@@ -3,7 +3,7 @@ import os
 from datetime import date, timedelta
 from flask import Flask, render_template, request, redirect, url_for
 
-from studygenie import db, scheduler, progress, ai
+from studygenie import db, scheduler, progress, ai, dashboard
 
 DB_PATH = os.environ.get("STUDYGENIE_DB", "studygenie.db")
 
@@ -56,8 +56,14 @@ def index():
     by_id = {p["id"]: p for p in progress.course_progress(DB_PATH)}
     for c in courses:
         c["progress_pct"] = by_id.get(c["id"], {}).get("pct")
-    return render_template("index.html", courses=courses,
-                           notice=request.args.get("notice"))
+    return render_template(
+        "index.html", courses=courses,
+        notice=request.args.get("notice"),
+        up_next=dashboard.up_next(DB_PATH),
+        overdue=dashboard.overdue(DB_PATH),
+        recent=dashboard.recently_completed(DB_PATH),
+        exams=dashboard.upcoming_exams(DB_PATH),
+        streak=progress.streak(DB_PATH))
 
 
 @app.route("/progress")

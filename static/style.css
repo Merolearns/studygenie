@@ -126,3 +126,14 @@ legend { padding: 0 .5rem; color: #9aa4bb; }
 .danger-text { color: #ff9d9d; }
 .btn.danger { background: #a02c2c; }
 .btn.danger:hover { background: #c03838; }
+.dash-list { list-style: none; padding: 0; display: grid; gap: .6rem; margin-bottom: 1.5rem; }
+.dash-list li {
+  background: #1a2233; border-radius: 10px; padding: .8rem 1rem;
+  display: flex; gap: .8rem; align-items: flex-start;
+}
+.dash-list .meta { display: block; margin-top: .15rem; }
+.tag {
+  display: inline-block; font-size: .72rem; background: #2c3852; color: #9ec1ff;
+  border-radius: 4px; padding: .1rem .4rem; margin-left: .4rem;
+}
+.inline-form { display: inline; margin: 0; }
