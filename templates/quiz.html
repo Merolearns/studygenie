@@ -13,6 +13,9 @@
 {% endif %}
 
 <h2>Quiz me</h2>
+{% if quiz_error %}
+<p class="error">{{ quiz_error }}</p>
+{% endif %}
 {% if topics %}
 <form method="post" class="form">
   <div class="form-row">

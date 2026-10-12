@@ -2,12 +2,15 @@
 {% block title %}Add course — StudyGenie{% endblock %}
 {% block content %}
 <h1>Add a course</h1>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
 <form method="post" class="form">
   <label>Course name
-    <input name="name" required maxlength="80" placeholder="e.g. CPSC 483 Machine Learning">
+    <input name="name" required maxlength="80" placeholder="e.g. CPSC 483 Machine Learning" value="{{ name or '' }}">
   </label>
   <label>Exam date
-    <input type="date" name="exam_date" required>
+    <input type="date" name="exam_date" required value="{{ exam_date or '' }}">
   </label>
   <button class="btn" type="submit">Save course</button>
 </form>

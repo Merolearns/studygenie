@@ -9,7 +9,23 @@ DB_PATH = os.environ.get("STUDYGENIE_DB", "studygenie.db")
 
 app = Flask(__name__)
 
+# Byte-size vs character-count limits (not interchangeable):
+# - MAX_CONTENT_LENGTH caps the whole request body in BYTES, enforced by
+#   Flask before the view runs (oversized -> 413).
+# - MAX_UPLOAD_CHARS caps the decoded text in CHARACTERS, enforced after
+#   UTF-8 decoding (a char can be up to 4 bytes, so the byte limit must
+#   stay well above 4x the char limit).
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024  # 1 MB per request
+
 MAX_UPLOAD_CHARS = 20000  # cap pasted/uploaded text sent to the AI
+# Never hold more than this many raw bytes from an upload in memory.
+MAX_UPLOAD_BYTES = MAX_UPLOAD_CHARS * 4
+
+
+@app.errorhandler(413)
+def _request_too_large(error):
+    return ("That upload is too large. Please keep files under 1 MB.",
+            413)
 
 
 def _read_document_content():
@@ -18,12 +34,14 @@ def _read_document_content():
     f = request.files.get("document_file")
     if f and f.filename:
         try:
-            text = f.read().decode("utf-8", errors="replace").strip()
+            # bounded read: never load the whole stream blindly
+            raw = f.read(MAX_UPLOAD_BYTES + 1)
+            text = raw.decode("utf-8", errors="replace").strip()
             if text:
                 doc = text[:MAX_UPLOAD_CHARS]
         except Exception:
             pass
-    return doc
+    return doc[:MAX_UPLOAD_CHARS]
 
 
 @app.before_request
@@ -60,10 +78,26 @@ def new_course():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         exam_date = request.form.get("exam_date", "").strip()
-        if name and exam_date:
+        error = None
+        if not name:
+            error = "Please enter a course name."
+        elif not _valid_exam_date(exam_date):
+            error = "Please enter a valid exam date (YYYY-MM-DD)."
+        if error is None:
             course_id = db.add_course(DB_PATH, name, exam_date)
             return redirect(url_for("course_detail", course_id=course_id))
+        return render_template("new_course.html", error=error,
+                               name=name, exam_date=exam_date)
     return render_template("new_course.html")
+
+
+def _valid_exam_date(value):
+    """YYYY-MM-DD and a real calendar date."""
+    try:
+        date.fromisoformat(value)
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 @app.route("/courses/<int:course_id>")
@@ -81,6 +115,8 @@ def course_detail(course_id):
 
 @app.route("/courses/<int:course_id>/topics", methods=["POST"])
 def add_topic(course_id):
+    if db.get_course(DB_PATH, course_id) is None:
+        return "Course not found", 404
     title = request.form.get("title", "").strip()
     difficulty = request.form.get("difficulty", 3)
     if title:
@@ -95,9 +131,15 @@ def generate_plan(course_id):
         return "Course not found", 404
     minutes = request.form.get("minutes_per_day", 60, type=int)
     use_avail = request.form.get("use_availability") == "1"
-    plan = scheduler.generate_plan(DB_PATH, course_id,
-                                   minutes_per_day=minutes,
-                                   use_availability=use_avail)
+    try:
+        plan = scheduler.generate_plan(DB_PATH, course_id,
+                                       minutes_per_day=minutes,
+                                       use_availability=use_avail)
+    except ValueError:
+        # defensive: a stored exam date that is not a real YYYY-MM-DD
+        # (possible only in databases predating input validation)
+        return ("This course has an invalid exam date and cannot be "
+                "scheduled.", 400)
     scheduler.save_plan(DB_PATH, course_id, plan)
     return redirect(url_for("course_detail", course_id=course_id))
 
@@ -130,17 +172,23 @@ def quiz(course_id):
     if course is None:
         return "Course not found", 404
     topics = db.list_topics(DB_PATH, course_id)
-    quiz_data, tips = None, None
+    quiz_data, tips, quiz_error = None, None, None
     if request.method == "POST":
         if request.form.get("action") == "tips":
             tips = ai.generate_tips(course["name"])
         elif request.form.get("topic"):
-            quiz_data = ai.generate_quiz(
-                request.form["topic"],
-                request.form.get("difficulty", "medium"))
+            topic_title = request.form["topic"]
+            # the topic must belong to this course; never trust raw input
+            if topic_title not in {t["title"] for t in topics}:
+                quiz_error = ("That topic does not belong to this course. "
+                              "Please pick one from the list.")
+            else:
+                quiz_data = ai.generate_quiz(
+                    topic_title, request.form.get("difficulty", "medium"))
     return render_template(
         "quiz.html", course=course, topics=topics,
         ai_enabled=ai.is_enabled(), quiz=quiz_data, tips=tips,
+        quiz_error=quiz_error,
     )
 
 
@@ -239,8 +287,30 @@ def _safe_filename(name):
 # --- interactive study sessions (server-side state, no persistence) ---
 
 import secrets as _secrets
+import time as _time
 
-SESSIONS = {}  # token -> session dict; lives only in process memory
+# Sessions live only in process memory and are lost on app restart.
+# They never expire while the user is active: every request touching a
+# session refreshes its last_active timestamp. Idle sessions are evicted
+# after SESSION_TTL_SECONDS, and a hard cap keeps memory bounded.
+SESSIONS = {}  # token -> session dict
+SESSION_TTL_SECONDS = 2 * 60 * 60  # 2 hours idle
+MAX_SESSIONS = 20
+
+
+def _now():
+    return _time.time()
+
+
+def _prune_sessions(now=None):
+    """Evict idle-expired sessions; enforce the hard cap oldest-first."""
+    now = now if now is not None else _now()
+    for token in [t for t, s in SESSIONS.items()
+                  if now - s["last_active"] > SESSION_TTL_SECONDS]:
+        del SESSIONS[token]
+    while len(SESSIONS) > MAX_SESSIONS:
+        oldest = min(SESSIONS, key=lambda t: SESSIONS[t]["last_active"])
+        del SESSIONS[oldest]
 SESSION_LENGTHS = (5, 10, 15)
 
 PRACTICE_TEMPLATES = (
@@ -265,9 +335,11 @@ def _practice_questions(topics, length):
 
 
 def _get_session_or_404(token):
+    _prune_sessions()
     sess = SESSIONS.get(token)
     if sess is None:
         return None
+    sess["last_active"] = _now()  # active use keeps the session alive
     return sess
 
 
@@ -337,7 +409,9 @@ def session_start(course_id):
         "answers": [], "feedbacks": [],
         "current": 0, "finished": False,
         "error": None, "pending_answer": "",
+        "last_active": _now(),
     }
+    _prune_sessions()
     return redirect(url_for("study_session", token=token))
 
 
