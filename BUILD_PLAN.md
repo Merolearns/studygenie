@@ -46,9 +46,17 @@ Original code, built in public, one honest step at a time.
   approval no detached run can grant (same as Oct 10). Local commits
   are complete; remote still at Day 4. Pin deferred until the push
   lands so the pinned repo shows the finished README.
+  (SUPERSEDED Oct 13 — see "Resolved" below.)
 
-BUILD COMPLETE — all 6 days built, tested, and committed locally.
-Push + profile pin pending the approval-gated GitHub write.
+BUILD COMPLETE — all 6 days built, tested, and pushed.
+Push landed Oct 12; profile pin verified Oct 13.
+
+## Resolved (Oct 13, 2026)
+- Push landed Oct 12 (all 6 days + hardening phases + gemini-3.6-flash fix;
+  remote main matches local tree content exactly).
+- Profile pins verified Oct 13: exactly docu-ask, churn-predictor,
+  insightboard, sql-practice-db, csv-doctor, studygenie — no neon-drift.
+  No edit was needed.
 
 ## Rules
 - 2–4 commits per day, natural messages, current dates only
