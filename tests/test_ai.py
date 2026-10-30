@@ -648,6 +648,23 @@ def test_quiz_malformed_questions_filtered(monkeypatch):
     assert result["questions"][0]["question"] == "Good?"
 
 
+def test_ask_json_rejects_non_object_json(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    model = fake_model('[{"questions": []}]')  # valid JSON, wrong shape
+    monkeypatch.setattr(ai, "_model", lambda: model)
+    data, error = ai._ask_json(model, "prompt")
+    assert data is None
+    assert "not an object" in error
+
+
+def test_quiz_non_object_json_does_not_raise(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "_model", lambda: fake_model('["q1", "q2"]'))
+    result = ai.generate_quiz("Joins")
+    assert result["enabled"] is True
+    assert "error" in result
+
+
 def test_quiz_prompt_requests_explanations(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
     model = fake_model('{"questions": []}')

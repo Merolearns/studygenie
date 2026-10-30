@@ -33,7 +33,11 @@ def _ask_json(model, prompt):
         text = model.generate_content(prompt).text.strip()
         if text.startswith("```"):  # strip markdown fences if the model wraps it
             text = text.split("\n", 1)[1].rsplit("```", 1)[0]
-        return json.loads(text), None
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            # valid JSON but not an object; callers all call .get on this
+            return None, "The AI returned JSON that was not an object."
+        return data, None
     except Exception as exc:  # never break the app over an AI hiccup
         return None, str(exc)
 
