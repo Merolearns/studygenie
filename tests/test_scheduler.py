@@ -159,3 +159,13 @@ def test_availability_off_uses_flat_budget(tmp_path):
                                use_availability=False,
                                start_date=date.today().isoformat())
     assert plan, "flat budget should ignore availability"
+
+
+def test_generate_plan_rejects_tiny_minutes_per_day():
+    import pytest
+    path = fresh_db()
+    cid, uid = seed(path, 10, [("KNN", 2)])
+    with pytest.raises(ValueError, match="minutes_per_day"):
+        scheduler.generate_plan(path, cid, uid, minutes_per_day=0)
+    with pytest.raises(ValueError, match="minutes_per_day"):
+        scheduler.generate_plan(path, cid, uid, minutes_per_day=-30)

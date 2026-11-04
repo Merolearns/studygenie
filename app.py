@@ -456,6 +456,9 @@ def generate_plan(course_id):
         return "Course not found", 404
     minutes = request.form.get("minutes_per_day", 60, type=int)
     use_avail = request.form.get("use_availability") == "1"
+    if minutes < scheduler.MIN_BLOCK:
+        return (f"Daily study minutes must be at least {scheduler.MIN_BLOCK}.",
+                400)
     try:
         plan = scheduler.generate_plan(DB_PATH, course_id, _uid(),
                                        minutes_per_day=minutes,

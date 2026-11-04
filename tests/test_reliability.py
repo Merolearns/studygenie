@@ -357,3 +357,12 @@ def test_prune_never_exceeds_cap():
         _seed_session(f"x{i}")
     app_module._prune_sessions()
     assert len(app_module.SESSIONS) == app_module.MAX_SESSIONS
+
+
+def test_plan_rejects_tiny_minutes_per_day(client, uid):
+    # a tampered form value must not build a garbage plan: clear 400
+    # instead of silently "working" with a negative budget
+    cid = make_course(client)
+    resp = client.post(f"/courses/{cid}/plan", data={"minutes_per_day": -5})
+    assert resp.status_code == 400
+    assert "at least 10" in resp.get_data(as_text=True)

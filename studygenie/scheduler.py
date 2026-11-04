@@ -72,6 +72,10 @@ def generate_plan(db_path, course_id, user_id, minutes_per_day=60,
     budget comes from the user's weekly availability instead of the
     flat minutes_per_day.
     """
+    if minutes_per_day < MIN_BLOCK:
+        raise ValueError(
+            f"minutes_per_day must be at least {MIN_BLOCK}, "
+            f"got {minutes_per_day}")
     start = _parse(start_date) if start_date else date.today()
     course = db.get_course(db_path, course_id, user_id)
     exam = _parse(course["exam_date"])
