@@ -337,10 +337,15 @@ def generate_coach_question(course_name, topics, history=None):
         return {"enabled": True, "error": str(exc)}
 
 
-def evaluate_coach_answer(question, answer, course_name, topics):
+def evaluate_coach_answer(question, answer, course_name, topics,
+                          history=None):
     """Evaluate a student's free-text answer; return feedback + follow-up.
 
-    Returns {"enabled": False} without a key, never raises. On success:
+    history is a list of {"question":..., "answer":..., "feedback":...}
+    dicts from earlier in the session (same shape generate_coach_question
+    takes). With it, the follow-up targets a gap the session hasn't
+    covered yet instead of repeating an earlier question. Returns
+    {"enabled": False} without a key, never raises. On success:
     {"enabled": True, "covered": ..., "missed": ..., "suggestion": ...,
      "followup": ...}. The followup becomes the session's next question.
     """
@@ -351,6 +356,18 @@ def evaluate_coach_answer(question, answer, course_name, topics):
     prompt = (
         "You are a study coach evaluating a student's answer. "
         f"Course: '{course_name}'. Topics:\n{topic_lines}\n\n"
+    )
+    history = history or []
+    if history:
+        earlier = "\n".join(
+            f"Q: {h['question']}\nA: {h['answer']}\n"
+            f"Feedback given: {h['feedback']}"
+            for h in history)
+        prompt += (
+            "Earlier in this session:\n"
+            f"{earlier}\n\n"
+        )
+    prompt += (
         f"Question: {question}\n"
         f"Student's answer: {answer}\n\n"
         "Reply with ONLY a JSON object shaped like this:\n"
@@ -365,6 +382,11 @@ def evaluate_coach_answer(question, answer, course_name, topics):
         "- Do not label every incomplete answer incorrect.\n"
         "- Do not claim the follow-up predicts any exam question."
     )
+    if history:
+        prompt += (
+            "\n- Do not repeat a question already asked earlier in this "
+            "session; the follow-up should target a gap not yet covered."
+        )
     data, error = _ask_json(model, prompt)
     if error:
         return {"enabled": True, "error": error}

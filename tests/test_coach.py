@@ -219,7 +219,7 @@ def _mock_coach(monkeypatch):
                         lambda name, topics, history=None: {
                             "enabled": True, "question": "Explain joins?"})
     monkeypatch.setattr(ai, "evaluate_coach_answer",
-                        lambda q, a, name, topics: {
+                        lambda q, a, name, topics, history=None: {
                             "enabled": True, "covered": "defined inner join",
                             "missed": "did not mention outer joins",
                             "suggestion": "contrast inner vs outer",
@@ -273,8 +273,11 @@ def test_ai_evaluate_returns_structured_feedback(monkeypatch):
 
 
 class FakeModel2:
+    last_prompt = ""
+
     def generate_content(self, prompt):
         import json
+        FakeModel2.last_prompt = prompt
         return type("Resp", (), {"text": json.dumps({
             "covered": "c", "missed": "m",
             "suggestion": "s", "followup": "f?"})})()
@@ -292,6 +295,34 @@ def test_ai_evaluate_rejects_incomplete_feedback(monkeypatch):
     assert "incomplete" in result["error"]
 
 
+def test_ai_evaluate_history_reaches_prompt(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "_model", lambda: FakeModel2())
+    history = [{"question": "What is a join?",
+                "answer": "combines rows from two tables",
+                "feedback": "Covered: joins Missed: outer joins"}]
+    result = ai.evaluate_coach_answer("When is a left join used?",
+                                      "when rows may be missing",
+                                      "DB", [{"title": "Joins"}],
+                                      history=history)
+    assert result["enabled"] is True
+    # the follow-up is judged against the whole session, not one answer
+    prompt = FakeModel2.last_prompt
+    assert "combines rows from two tables" in prompt
+    assert "outer joins" in prompt
+    assert "Do not repeat a question already asked" in prompt
+
+
+def test_ai_evaluate_no_history_no_history_section(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "_model", lambda: FakeModel2())
+    result = ai.evaluate_coach_answer("Q?", "my answer", "DB",
+                                      [{"title": "T"}])
+    assert result["enabled"] is True
+    assert "Earlier in this session" not in FakeModel2.last_prompt
+    assert "Do not repeat a question already asked" not in FakeModel2.last_prompt
+
+
 def test_ai_answer_flow_advances_on_success(client, monkeypatch):
     _mock_coach(monkeypatch)
     cid, tids = make_course(client)
@@ -305,6 +336,32 @@ def test_ai_answer_flow_advances_on_success(client, monkeypatch):
     assert sess["questions"][1]["question"] == "When would you use a left join?"
 
 
+def test_ai_evaluate_receives_session_history(client, monkeypatch):
+    """Second answer's evaluation sees the first exchange, so the coach
+    can build on it instead of judging each answer in isolation."""
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(ai, "generate_coach_question",
+                        lambda name, topics, history=None: {
+                            "enabled": True, "question": "Explain joins?"})
+    seen = []
+
+    def capturing(q, a, name, topics, history=None):
+        seen.append(history)
+        return {"enabled": True, "covered": "c", "missed": "m",
+                "suggestion": "s", "followup": f"Follow-up {len(seen)}?"}
+
+    monkeypatch.setattr(ai, "evaluate_coach_answer", capturing)
+    cid, tids = make_course(client)
+    token = _start_ai(client, cid, tids)
+    client.post(f"/session/{token}/answer", data={"answer": "first answer"})
+    client.post(f"/session/{token}/answer", data={"answer": "second answer"})
+    assert seen[0] == []  # first question: no earlier exchanges
+    assert len(seen[1]) == 1
+    assert seen[1][0]["question"] == "Explain joins?"
+    assert seen[1][0]["answer"] == "first answer"
+    assert "Covered: c" in seen[1][0]["feedback"]
+
+
 def test_ai_failure_preserves_answer_and_allows_retry(client, monkeypatch):
     _mock_coach(monkeypatch)
     cid, tids = make_course(client)
@@ -312,7 +369,7 @@ def test_ai_failure_preserves_answer_and_allows_retry(client, monkeypatch):
 
     calls = {"n": 0}
 
-    def flaky(q, a, name, topics):
+    def flaky(q, a, name, topics, history=None):
         calls["n"] += 1
         if calls["n"] == 1:
             return {"enabled": True, "error": "quota exceeded"}

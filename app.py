@@ -802,7 +802,8 @@ def session_answer(token):
                     "feedback": _feedback_text(sess["feedbacks"][i])}
                    for i in range(idx)]
         result = ai.evaluate_coach_answer(
-            question, answer, sess["course_name"], sess["topics"])
+            question, answer, sess["course_name"], sess["topics"],
+            history=history)
         if result.get("error"):
             # do not advance; preserve answer for retry
             sess["error"] = result["error"]
