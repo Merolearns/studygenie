@@ -442,7 +442,13 @@ def add_topic(course_id):
     if db.get_course(DB_PATH, course_id, _uid()) is None:
         return "Course not found", 404
     title = request.form.get("title", "").strip()
-    difficulty = request.form.get("difficulty", 3)
+    # a crafted non-numeric difficulty used to reach db.add_topic's
+    # int() and 500; parse it here like edit_topic does instead
+    try:
+        difficulty = int(request.form.get("difficulty", 3))
+    except (TypeError, ValueError):
+        difficulty = 3
+    difficulty = max(1, min(5, difficulty))
     if title:
         db.add_topic(DB_PATH, course_id, _uid(), title, difficulty)
     return redirect(url_for("course_detail", course_id=course_id))

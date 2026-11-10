@@ -147,6 +147,27 @@ def _topic_id(client, cid):
         ).fetchone()["id"]
 
 
+def test_add_topic_bad_difficulty_defaults_to_3(client, uid):
+    # a non-numeric difficulty used to reach db.add_topic's int() and 500
+    cid = _make_course_with_topic(client)
+    resp = client.post(f"/courses/{cid}/topics",
+                       data={"title": "BadDiff", "difficulty": "abc"})
+    assert resp.status_code == 302
+    topics = db.list_topics(app_module.DB_PATH, cid, uid)
+    added = [t for t in topics if t["title"] == "BadDiff"]
+    assert len(added) == 1 and added[0]["difficulty"] == 3
+
+
+def test_add_topic_difficulty_clamped_to_range(client, uid):
+    cid = _make_course_with_topic(client)
+    resp = client.post(f"/courses/{cid}/topics",
+                       data={"title": "TooHard", "difficulty": "99"})
+    assert resp.status_code == 302
+    topics = db.list_topics(app_module.DB_PATH, cid, uid)
+    added = [t for t in topics if t["title"] == "TooHard"]
+    assert len(added) == 1 and added[0]["difficulty"] == 5
+
+
 def test_edit_topic_roundtrip(client):
     cid = _make_course_with_topic(client)
     tid = _topic_id(client, cid)
