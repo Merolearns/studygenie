@@ -39,6 +39,10 @@ def allocate_minutes(weights, budget):
     Every session gets at least MIN_BLOCK minutes when that fits;
     the day's total never exceeds the budget.
     """
+    if not weights:
+        # no sessions to split across: an empty day, not a crash
+        # (used to raise ZeroDivisionError in the leftover loop)
+        return []
     total = sum(weights)
     raw = [budget * w / total for w in weights]
     minimum = MIN_BLOCK if len(weights) * MIN_BLOCK <= budget else 1
