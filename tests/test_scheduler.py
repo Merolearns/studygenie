@@ -169,3 +169,11 @@ def test_generate_plan_rejects_tiny_minutes_per_day():
         scheduler.generate_plan(path, cid, uid, minutes_per_day=0)
     with pytest.raises(ValueError, match="minutes_per_day"):
         scheduler.generate_plan(path, cid, uid, minutes_per_day=-30)
+
+
+def test_allocate_minutes_empty_weights_returns_empty():
+    # no sessions to split across used to raise ZeroDivisionError in
+    # the leftover-distribution loop
+    from studygenie.scheduler import allocate_minutes
+    assert allocate_minutes([], 60) == []
+    assert allocate_minutes([], 0) == []
