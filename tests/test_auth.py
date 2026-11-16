@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -221,3 +222,49 @@ def test_delete_account_requires_confirmation(raw_client):
     register(client, "keep@x.com")
     client.post("/account/delete", data={})  # no confirm
     assert db.get_user_by_email(path, "keep@x.com") is not None
+
+
+def test_login_lockout_still_blocks_after_five_failures(monkeypatch):
+    """Live failures still count: 5 failures -> locked out."""
+    app_module._LOGIN_ATTEMPTS.clear()
+    try:
+        now = [1000000.0]
+        monkeypatch.setattr(time, "time", lambda: now[0])
+        for _ in range(app_module.MAX_LOGIN_ATTEMPTS):
+            app_module._record_login_failure("a@x.com", "1.2.3.4")
+        assert app_module._login_allowed("a@x.com", "1.2.3.4") is False
+    finally:
+        app_module._LOGIN_ATTEMPTS.clear()
+
+
+def test_login_attempts_pruned_after_lockout_expires(monkeypatch):
+    """Expired failures stop counting and the key is dropped, so the
+    store doesn't grow one entry per email+IP forever."""
+    app_module._LOGIN_ATTEMPTS.clear()
+    try:
+        now = [1000000.0]
+        monkeypatch.setattr(time, "time", lambda: now[0])
+        for _ in range(app_module.MAX_LOGIN_ATTEMPTS):
+            app_module._record_login_failure("a@x.com", "1.2.3.4")
+        assert app_module._login_allowed("a@x.com", "1.2.3.4") is False
+        # past the 15-minute window: allowed again, key gone
+        now[0] += app_module.LOGIN_LOCKOUT_SECONDS + 1
+        assert app_module._login_allowed("a@x.com", "1.2.3.4") is True
+        assert ("a@x.com", "1.2.3.4") not in app_module._LOGIN_ATTEMPTS
+    finally:
+        app_module._LOGIN_ATTEMPTS.clear()
+
+
+def test_login_attempts_pruned_for_other_users(monkeypatch):
+    """Checking one user's login prunes another user's expired key too."""
+    app_module._LOGIN_ATTEMPTS.clear()
+    try:
+        now = [1000000.0]
+        monkeypatch.setattr(time, "time", lambda: now[0])
+        app_module._record_login_failure("old@x.com", "9.9.9.9")
+        now[0] += app_module.LOGIN_LOCKOUT_SECONDS + 1
+        assert app_module._login_allowed("new@x.com", "1.2.3.4") is True
+        assert ("old@x.com", "9.9.9.9") not in app_module._LOGIN_ATTEMPTS
+        assert app_module._LOGIN_ATTEMPTS == {}
+    finally:
+        app_module._LOGIN_ATTEMPTS.clear()

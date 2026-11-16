@@ -105,10 +105,19 @@ LOGIN_LOCKOUT_SECONDS = 15 * 60
 
 def _login_allowed(email, ip):
     import time
+    now = time.time()
+    # drop keys whose failures have all expired, so the store stays
+    # bounded: without this it grows one entry per email+IP forever
+    for key in [k for k, ts in _LOGIN_ATTEMPTS.items()
+               if not any(now - t < LOGIN_LOCKOUT_SECONDS for t in ts)]:
+        del _LOGIN_ATTEMPTS[key]
     key = (email.lower(), ip)
     attempts = [t for t in _LOGIN_ATTEMPTS.get(key, [])
-                if time.time() - t < LOGIN_LOCKOUT_SECONDS]
-    _LOGIN_ATTEMPTS[key] = attempts
+                if now - t < LOGIN_LOCKOUT_SECONDS]
+    if attempts:
+        _LOGIN_ATTEMPTS[key] = attempts
+    else:
+        _LOGIN_ATTEMPTS.pop(key, None)
     return len(attempts) < MAX_LOGIN_ATTEMPTS
 
 
