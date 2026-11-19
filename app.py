@@ -125,6 +125,18 @@ def _record_login_failure(email, ip):
     import time
     _LOGIN_ATTEMPTS.setdefault((email.lower(), ip), []).append(time.time())
 
+
+def _safe_next_url(value):
+    """Return value only if it is a same-site path, else None.
+
+    Accepts "/progress" but rejects absolute URLs
+    ("https://evil.example.com") and protocol-relative URLs ("//evil.com"),
+    so a crafted ?next= cannot bounce a freshly logged-in user off-site.
+    """
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return None
+    return value
+
 # Byte-size vs character-count limits (not interchangeable):
 # - MAX_CONTENT_LENGTH caps the whole request body in BYTES, enforced by
 #   Flask before the view runs (oversized -> 413).
@@ -215,7 +227,8 @@ def login():
             row = db.get_user_by_email(DB_PATH, email)
             if row and check_password_hash(row["password_hash"], password):
                 login_user(User(row))
-                return redirect(request.args.get("next") or url_for("index"))
+                return redirect(_safe_next_url(request.args.get("next"))
+                                or url_for("index"))
             _record_login_failure(email, ip)
             error = "Invalid email or password."
     return render_template("login.html", error=error)

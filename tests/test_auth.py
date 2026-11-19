@@ -268,3 +268,25 @@ def test_login_attempts_pruned_for_other_users(monkeypatch):
         assert app_module._LOGIN_ATTEMPTS == {}
     finally:
         app_module._LOGIN_ATTEMPTS.clear()
+
+
+def test_login_next_redirect_stays_on_site(raw_client):
+    """A crafted ?next= must not bounce a fresh login off-site."""
+    client, _ = raw_client
+    register(client, "f@x.com")
+    client.post("/logout")
+    # legitimate in-app destination still works
+    resp = client.post("/login?next=/progress",
+                       data={"email": "f@x.com", "password": "password123"})
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/progress"
+    client.post("/logout")
+    # absolute and protocol-relative URLs fall back to the dashboard
+    for bad in ("https://evil.example.com/phish",
+                "//evil.example.com/phish"):
+        resp = client.post(f"/login?next={bad}",
+                           data={"email": "f@x.com",
+                                 "password": "password123"})
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == "/"
+        client.post("/logout")
