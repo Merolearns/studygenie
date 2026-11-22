@@ -137,6 +137,21 @@ def generate_plan(db_path, course_id, user_id, minutes_per_day=60,
         day_budget = budget(date.fromisoformat(day_iso))
         if day_budget < MIN_BLOCK:
             continue  # no availability this day; drop its sessions
+        if len(sessions) > day_budget:
+            # every session needs at least 1 minute, so more sessions
+            # than minutes can never fit: drop the lowest-priority
+            # extras instead of breaking the daily budget. First
+            # sessions outrank reviews, then hardest first — a dropped
+            # review is harmless, and with a very short window and many
+            # topics the easiest topics may go unscheduled, which is
+            # still better than silently exceeding the user's daily limit.
+            ranked = sorted(
+                range(len(sessions)),
+                key=lambda i: (sessions[i][1],
+                               sessions[i][0]["difficulty"]),
+                reverse=True)
+            keep = sorted(ranked[:day_budget])
+            sessions = [sessions[i] for i in keep]
         weights = [t["difficulty"] * kind_weight for t, kind_weight in sessions]
         for (t, _), minutes in zip(sessions, allocate_minutes(weights, day_budget)):
             plan.append({

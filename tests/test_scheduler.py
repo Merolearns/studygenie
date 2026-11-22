@@ -88,6 +88,22 @@ def test_daily_budget_respected():
     os.unlink(path)
 
 
+def test_daily_budget_respected_with_many_topics_and_short_window():
+    # 30 topics, exam in 2 days, 10 min/day: first sessions that don't
+    # fit earlier days used to pile onto the last day (29 minutes on a
+    # 10-minute budget) because allocate_minutes floors every session
+    # at 1 minute and its take-back loop gives up at that floor
+    path = fresh_db()
+    cid, uid = seed(path, 2, [(f"Topic {i}", (i % 5) + 1) for i in range(30)])
+    plan = scheduler.generate_plan(path, cid, uid, minutes_per_day=10)
+    per_day = {}
+    for s in plan:
+        per_day.setdefault(s["date"], 0)
+        per_day[s["date"]] += s["minutes"]
+    assert all(total <= 10 for total in per_day.values()), per_day
+    os.unlink(path)
+
+
 def test_spaced_repetition_offsets():
     path = fresh_db()
     cid, uid = seed(path, 20, [("KNN", 3)])
