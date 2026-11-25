@@ -24,6 +24,10 @@ def _enrich(rows, today):
         overdue_days = (today - planned).days
         if overdue_days > 0:
             reason = f"Planned {planned.strftime('%b %d')} — {overdue_days}d overdue"
+        elif days_left < 0:
+            # exam already passed: "Exam in -2d" reads as if the exam
+            # were still coming; say so plainly instead
+            reason = f"Exam passed {-days_left}d ago · difficulty {r['difficulty']}/5"
         elif days_left <= 3:
             reason = f"Exam in {days_left}d · difficulty {r['difficulty']}/5"
         elif days_left <= 10:

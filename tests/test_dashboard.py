@@ -143,3 +143,15 @@ def test_up_next_respects_limit(client, uid):
         db.add_session(path, cid, uid, t2,
                        (today + timedelta(days=i + 5)).isoformat(), 15)
     assert len(dashboard.up_next(path, uid)) == 5
+
+
+def test_up_next_reason_for_passed_exam(client, uid):
+    # a session for a course whose exam already passed used to read
+    # "Exam in -2d" — the exam is not coming, it is over
+    path = app_module.DB_PATH
+    cid, t1, t2 = seed(path, uid, exam_days=-2)  # exam 2 days ago
+    items = dashboard.up_next(path, uid)
+    assert items, "sessions for a passed exam still show up"
+    reasons = " ".join(i["reason"] for i in items)
+    assert "Exam in -" not in reasons
+    assert any("passed" in i["reason"] for i in items)
