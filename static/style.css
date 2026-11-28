@@ -33,7 +33,7 @@ main { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
   padding: .55rem .7rem; border-radius: 8px;
   border: 1px solid #2c3852; background: #141b2c; color: #fff; font-size: 1rem;
 }
-.btn.small { padding: .3rem .7rem; font-size: .85rem; }
+.btn.small { padding: .55rem 1rem; font-size: .95rem; min-height: 44px; }
 .btn[disabled] { background: #2c3852; cursor: not-allowed; }
 .ai-note {
   background: #1a2233; border: 1px dashed #4f7cff; border-radius: 10px;
@@ -71,8 +71,8 @@ nav { margin-left: auto; }
 .sessions li { display: flex; gap: .7rem; align-items: flex-start; }
 .check {
   background: none; border: 2px solid #4f7cff; border-radius: 50%;
-  width: 1.7rem; height: 1.7rem; color: #4f7cff; cursor: pointer;
-  font-size: .95rem; line-height: 1; padding: 0; flex-shrink: 0;
+  width: 2.25rem; height: 2.25rem; color: #4f7cff; cursor: pointer;
+  font-size: 1.1rem; line-height: 1; padding: 0; flex-shrink: 0;
 }
 .sessions li.done .check { background: #4f7cff; color: #fff; }
 .sessions li.done .session-title { text-decoration: line-through; color: #9aa4bb; }
